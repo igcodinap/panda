@@ -1,0 +1,23 @@
+scripts/consult_ai_team.py
+  s_72530e0e519de7::t_a6186d59a8e642 27-28,66-70,209
+agents/openai.yaml
+  s_72530e0e519de7::t_a6186d59a8e642 4
+SKILL.md
+  s_72530e0e519de7::t_a6186d59a8e642 3,60,64,110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.11",
+  "base_commit_sha": "6d8e40632008eb1b19cb994b043a9bb76eb0ca36",
+  "prompts": {},
+  "sessions": {
+    "s_72530e0e519de7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e4c74-9202-7ee2-929f-d706f8a8080c",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
