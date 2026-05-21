@@ -25,6 +25,7 @@ ROLE_GUIDANCE = {
 }
 
 DEFAULT_OPENCODE_MODEL = "opencode-go/glm-5.1"
+DEFAULT_APPROVAL_MODE = "unsupervised"
 
 MODE_GUIDANCE = {
     "advisory": """Rules:
@@ -54,6 +55,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tool", choices=["claude", "opencode", "both"], default="both")
     parser.add_argument("--mode", choices=sorted(MODE_GUIDANCE), default="explore")
+    parser.add_argument(
+        "--approval-mode",
+        choices=["unsupervised", "supervised"],
+        default=os.environ.get("AI_TEAM_APPROVAL_MODE", DEFAULT_APPROVAL_MODE),
+        help="Whether Claude Code/OpenCode should auto-approve their own tool prompts. Defaults to unsupervised.",
+    )
     parser.add_argument("--role", choices=sorted(ROLE_GUIDANCE), default="brainstorm")
     parser.add_argument("--prompt", help="Prompt text to send to the tools.")
     parser.add_argument("--prompt-file", type=Path, help="File containing prompt text.")
@@ -84,14 +91,19 @@ def read_prompt(args: argparse.Namespace) -> str:
     return prompt
 
 
-def consultation_prompt(mode: str, role: str, user_prompt: str) -> str:
+def consultation_prompt(mode: str, role: str, approval_mode: str, user_prompt: str) -> str:
     return f"""You are advising Codex as an independent collaborator.
 
 Mode: {mode}
+Approval mode: {approval_mode}
 Role: {role}
 Role guidance: {ROLE_GUIDANCE[role]}
 
 {MODE_GUIDANCE[mode]}
+
+Approval guidance:
+- If approval mode is unsupervised, proceed through local tool permission prompts without stopping for Codex approval.
+- Even in unsupervised mode, do not commit, push, publish, deploy, delete data, rewrite history, or alter production systems unless the user explicitly requested that class of action.
 
 User/context prompt:
 {user_prompt}
@@ -158,7 +170,7 @@ def write_response(output_dir: Path, result: dict) -> None:
 
 def main() -> int:
     args = parse_args()
-    prompt = consultation_prompt(args.mode, args.role, read_prompt(args))
+    prompt = consultation_prompt(args.mode, args.role, args.approval_mode, read_prompt(args))
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     output_dir = args.output_dir or Path(tempfile.gettempdir()) / "ai-team-consults" / stamp
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -182,16 +194,16 @@ def main() -> int:
         if args.claude_model:
             claude_command.extend(["--model", args.claude_model])
         if args.mode == "advisory":
-            claude_command.extend(["--permission-mode", "plan", "--tools", ""])
-        elif args.mode == "explore":
-            claude_command.extend([
-                "--permission-mode",
-                "default",
-                "--allowedTools",
-                "Read,Grep,Glob,LS,Bash,WebFetch,WebSearch",
-            ])
+            claude_command.extend(["--permission-mode", "plan", "--tools="])
         else:
-            claude_command.extend(["--permission-mode", "default"])
+            if args.approval_mode == "unsupervised":
+                claude_command.extend(["--permission-mode", "bypassPermissions"])
+            else:
+                claude_command.extend(["--permission-mode", "default"])
+        if args.mode == "explore":
+            claude_command.extend([
+                "--allowedTools=Read,Grep,Glob,LS,Bash,WebFetch,WebSearch",
+            ])
         claude_command.append(prompt)
         commands["claude"] = claude_command
 
@@ -206,6 +218,8 @@ def main() -> int:
             "--dir",
             str(run_cwd),
         ]
+        if args.approval_mode == "unsupervised":
+            commands["opencode"].append("--dangerously-skip-permissions")
         commands["opencode"].extend(["--model", args.opencode_model])
         commands["opencode"].append(prompt)
 
@@ -217,6 +231,7 @@ def main() -> int:
 
     manifest = {
         "mode": args.mode,
+        "approval_mode": args.approval_mode,
         "role": args.role,
         "dry_run": args.dry_run,
         "output_dir": str(output_dir),
