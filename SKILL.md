@@ -50,6 +50,8 @@ The runner:
 
 Use `--prompt-file` for longer prompts, `--workspace` to target a repo explicitly, and `--dry-run` to inspect commands without calling the tools.
 
+When Codex runs the runner with OpenCode enabled, execute it outside the filesystem sandbox with user approval. OpenCode writes to its own state database under `~/.local/share/opencode`; sandboxed runs can fail with SQLite checkpoint errors such as `PRAGMA wal_checkpoint(PASSIVE)`.
+
 Pin models when repeatability matters:
 
 ```bash
@@ -97,6 +99,7 @@ For deeper prompt patterns, read `references/prompt-patterns.md`.
 - Do not paste secrets, private credentials, tokens, customer data, or unnecessary proprietary context into external tools.
 - Do not ask external tools to make edits in the user's workspace by default; use `patch` mode only with user intent.
 - Allow shell commands for exploration when useful. Avoid commands that intentionally mutate source files, rewrite history, publish, deploy, delete data, or alter production systems.
+- Run OpenCode consultations outside Codex's filesystem sandbox when needed so OpenCode can update its own app state.
 - If a collaborator changes files, require a changed-file list and diff summary before Codex considers the work.
 - Do not use dangerous permission flags such as `--dangerously-skip-permissions` or `--allow-dangerously-skip-permissions` for consultation.
 - Keep prompts bounded. Summarize large files and include only the snippets needed for the question.
