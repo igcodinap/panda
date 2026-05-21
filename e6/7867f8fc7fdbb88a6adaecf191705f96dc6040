@@ -1,0 +1,19 @@
+SKILL.md
+  s_72530e0e519de7::t_05db582e714c1c 117,119-128,131-171,174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.11",
+  "base_commit_sha": "e67867f8fc7fdbb88a6adaecf191705f96dc6040",
+  "prompts": {},
+  "sessions": {
+    "s_72530e0e519de7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e4c74-9202-7ee2-929f-d706f8a8080c",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
