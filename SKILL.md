@@ -43,13 +43,14 @@ The runner:
 
 - Calls `claude -p` and/or `opencode run` when available.
 - Defaults to `--approval-mode unsupervised`, so Claude Code and OpenCode auto-approve their own local tool prompts instead of blocking Codex.
+- Defaults to `--execution auto`, which runs multiple collaborators in parallel for `advisory` and `explore` mode, while keeping `patch` mode sequential as a conservative guardrail.
 - Runs `advisory` consultations in an isolated temporary directory by default.
 - Runs `explore` and `patch` consultations from the workspace so collaborators can inspect the repo.
 - Allows shell commands in `explore` mode for inspection, testing, builds, logs, git state, and research.
 - Asks collaborators to avoid source edits outside `patch` mode and to report any changed files.
 - Writes each response plus a manifest under `/tmp/ai-team-consults/...` unless `--output-dir` is provided.
 
-Use `--prompt-file` for longer prompts, `--workspace` to target a repo explicitly, `--approval-mode supervised` to disable collaborator auto-approval, and `--dry-run` to inspect commands without calling the tools.
+Use `--prompt-file` for longer prompts, `--workspace` to target a repo explicitly, `--approval-mode supervised` to disable collaborator auto-approval, `--execution parallel` or `--execution sequential` to override auto execution, and `--dry-run` to inspect commands without calling the tools.
 
 When Codex runs the runner with OpenCode enabled, execute it outside the filesystem sandbox. OpenCode writes to its own state database under `~/.local/share/opencode`; sandboxed runs can fail with SQLite checkpoint errors such as `PRAGMA wal_checkpoint(PASSIVE)`. Codex may still need one host-level approval to launch the runner outside the sandbox, but Claude Code and OpenCode should not pause for their own internal approvals after launch.
 

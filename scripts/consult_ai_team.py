@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import datetime as dt
 import json
 import os
@@ -55,6 +56,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tool", choices=["claude", "opencode", "both"], default="both")
     parser.add_argument("--mode", choices=sorted(MODE_GUIDANCE), default="explore")
+    parser.add_argument(
+        "--execution",
+        choices=["auto", "parallel", "sequential"],
+        default=os.environ.get("AI_TEAM_EXECUTION", "auto"),
+        help="Run multiple tools in parallel, sequentially, or auto mode. Auto parallelizes advisory/explore and serializes patch.",
+    )
     parser.add_argument(
         "--approval-mode",
         choices=["unsupervised", "supervised"],
@@ -131,10 +138,12 @@ def run_tool(name: str, command: list[str], cwd: Path, timeout: int, dry_run: bo
         "timed_out": False,
         "stdout": "",
         "stderr": "",
+        "finished_at": None,
     }
     if dry_run:
         result["stdout"] = quote_cmd(command)
         result["returncode"] = 0
+        result["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
         return result
     try:
         completed = subprocess.run(
@@ -150,10 +159,17 @@ def run_tool(name: str, command: list[str], cwd: Path, timeout: int, dry_run: bo
         result["returncode"] = -1
         result["stdout"] = exc.stdout or ""
         result["stderr"] = exc.stderr or f"Timed out after {timeout} seconds."
+        result["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+        return result
+    except OSError as exc:
+        result["returncode"] = -1
+        result["stderr"] = f"Failed to launch {name}: {exc}"
+        result["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
         return result
     result["returncode"] = completed.returncode
     result["stdout"] = completed.stdout
     result["stderr"] = completed.stderr
+    result["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
     return result
 
 
@@ -166,6 +182,16 @@ def write_response(output_dir: Path, result: dict) -> None:
     elif result["returncode"] != 0:
         body += f"\n\n[status]\nExited with code {result['returncode']}.\n"
     (output_dir / f"{result['tool']}.txt").write_text(body.strip() + "\n", encoding="utf-8")
+
+
+def should_run_parallel(execution: str, mode: str, tool_count: int) -> bool:
+    if tool_count < 2:
+        return False
+    if execution == "parallel":
+        return True
+    if execution == "sequential":
+        return False
+    return mode in {"advisory", "explore"}
 
 
 def main() -> int:
@@ -223,14 +249,31 @@ def main() -> int:
         commands["opencode"].extend(["--model", args.opencode_model])
         commands["opencode"].append(prompt)
 
+    run_parallel = should_run_parallel(args.execution, args.mode, len(commands))
+    raw_results: dict[str, dict] = {}
+    if run_parallel:
+        with ThreadPoolExecutor(max_workers=len(commands)) as executor:
+            futures = {
+                executor.submit(run_tool, name, command, run_cwd, args.timeout, args.dry_run): name
+                for name, command in commands.items()
+            }
+            for future in as_completed(futures):
+                name = futures[future]
+                raw_results[name] = future.result()
+    else:
+        for name, command in commands.items():
+            raw_results[name] = run_tool(name, command, run_cwd, args.timeout, args.dry_run)
+
     results = []
-    for name, command in commands.items():
-        result = run_tool(name, command, run_cwd, args.timeout, args.dry_run)
+    for name in commands:
+        result = raw_results[name]
         results.append({key: value for key, value in result.items() if key not in {"stdout", "stderr"}})
         write_response(output_dir, result)
 
     manifest = {
         "mode": args.mode,
+        "execution": "parallel" if run_parallel else "sequential",
+        "requested_execution": args.execution,
         "approval_mode": args.approval_mode,
         "role": args.role,
         "dry_run": args.dry_run,
