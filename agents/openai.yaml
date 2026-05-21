@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Team"
+  short_description: "Consult Claude Code and OpenCode as collaborators"
+  default_prompt: "Use $ai-team to get independent implementation perspectives from Claude Code and OpenCode before deciding."
