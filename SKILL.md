@@ -1,6 +1,6 @@
 ---
 name: ai-team
-description: Use when Codex should consult local Claude Code and OpenCode CLIs as independent collaborators for brainstorming, alternative implementation designs, architecture tradeoffs, debugging hypotheses, code review perspectives, test planning, or second opinions before or during coding. Use when the user asks for a team, multiple viewpoints, another AI perspective, Claude Code, OpenCode, or external-agent collaboration.
+description: Use when Codex should consult local Claude Code and OpenCode CLIs as independent collaborators for brainstorming, alternative implementation designs, architecture tradeoffs, debugging hypotheses, code review perspectives, test planning, or second opinions before or during coding. Use when the user asks for a team, multiple viewpoints, another AI perspective, Claude Code, OpenCode, external-agent collaboration, aiteam, or ait.
 ---
 
 # AI Team
@@ -57,11 +57,11 @@ python3 /Users/howdy/.codex/skills/ai-team/scripts/consult_ai_team.py \
   --tool both \
   --mode explore \
   --claude-model sonnet \
-  --opencode-model "anthropic/claude-sonnet-4-6" \
+  --opencode-model "opencode-go/glm-5.1" \
   --prompt "Inspect the failing tests and recommend the smallest fix."
 ```
 
-If no model is provided, each CLI uses its configured default.
+If no model is provided, Claude Code uses its configured default and OpenCode uses `opencode-go/glm-5.1`.
 
 ## Prompt Shape
 
@@ -107,7 +107,7 @@ For deeper prompt patterns, read `references/prompt-patterns.md`.
 ## Model And Usage Metadata
 
 - Claude Code: pass `--claude-model` to pin the model. Claude supports JSON output formats; use them when token/cost metadata needs to be harvested from a run.
-- OpenCode: pass `--opencode-model` to pin the model. Use `opencode stats --models`, `opencode run --format json`, or `opencode export <sessionID>` when token/cost/model details need inspection.
+- OpenCode: defaults to `opencode-go/glm-5.1`. Pass `--opencode-model` to override it. Use `opencode stats --models`, `opencode run --format json`, or `opencode export <sessionID>` when token/cost/model details need inspection.
 - Treat usage metadata as best-effort unless the runner explicitly captures it for that run. When exact accounting matters, verify against the tool's native stats/export output.
 
 ## Synthesis

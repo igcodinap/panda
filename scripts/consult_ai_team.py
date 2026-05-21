@@ -24,6 +24,8 @@ ROLE_GUIDANCE = {
     "test-plan": "Propose focused tests and manual verification for the described change.",
 }
 
+DEFAULT_OPENCODE_MODEL = "opencode-go/glm-5.1"
+
 MODE_GUIDANCE = {
     "advisory": """Rules:
 - Do not edit files.
@@ -61,7 +63,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--claude-bin", default=os.environ.get("CLAUDE_BIN", "claude"))
     parser.add_argument("--opencode-bin", default=os.environ.get("OPENCODE_BIN", "opencode"))
     parser.add_argument("--claude-model", help="Optional Claude Code model override.")
-    parser.add_argument("--opencode-model", help="Optional OpenCode model override in provider/model format.")
+    parser.add_argument(
+        "--opencode-model",
+        default=os.environ.get("OPENCODE_MODEL", DEFAULT_OPENCODE_MODEL),
+        help=f"OpenCode model in provider/model format. Defaults to {DEFAULT_OPENCODE_MODEL}.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print commands without running tools.")
     return parser.parse_args()
 
@@ -200,8 +206,7 @@ def main() -> int:
             "--dir",
             str(run_cwd),
         ]
-        if args.opencode_model:
-            commands["opencode"].extend(["--model", args.opencode_model])
+        commands["opencode"].extend(["--model", args.opencode_model])
         commands["opencode"].append(prompt)
 
     results = []
