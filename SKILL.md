@@ -114,12 +114,61 @@ For deeper prompt patterns, read `references/prompt-patterns.md`.
 - OpenCode: defaults to `opencode-go/glm-5.1`. Pass `--opencode-model` to override it. Use `opencode stats --models`, `opencode run --format json`, or `opencode export <sessionID>` when token/cost/model details need inspection.
 - Treat usage metadata as best-effort unless the runner explicitly captures it for that run. When exact accounting matters, verify against the tool's native stats/export output.
 
-## Synthesis
+## Adaptive Reporting
 
-When reporting back to the user or deciding implementation direction, summarize the collaboration in a compact way:
+Use source attribution when external collaborators materially influenced the decision. Scale the report to the task instead of forcing one template.
+
+- Tiny task: use one sentence if that is enough.
+- Normal task: use brief source-by-source bullets plus Codex's decision.
+- Complex or risky task: include collaborator findings, agreement, disagreement, Codex's decision, verification, and artifact paths.
+- Do not paste raw transcripts by default. Point to the runner output directory when detail exceeds the useful answer size.
+- Quote only short snippets when exact wording matters.
+- Preserve full outputs on disk and inspect raw files only when a specific claim needs checking.
+
+Tiny example:
 
 ```text
-I asked Claude Code and OpenCode for second opinions. Both agreed on A. Claude emphasized risk B; OpenCode suggested alternative C. I am going with A because it matches the existing code and is easier to verify with test D.
+OpenCode confirmed the GLM model flag is correct; Codex verified it with a dry run.
 ```
 
-Keep the external consultation invisible when it adds no important decision context, but preserve useful outputs in the runner's output directory during the task.
+Normal example:
+
+```text
+Claude Code
+- Flagged the argument parsing issue.
+
+OpenCode
+- Confirmed the sandbox/SQLite issue.
+
+Codex Decision
+- I patched both and verified with smoke tests.
+```
+
+Complex example:
+
+```text
+AI Team Summary
+
+Claude Code
+- ...
+
+OpenCode
+- ...
+
+Agreement
+- ...
+
+Disagreement
+- ...
+
+Codex Decision
+- ...
+
+Verification
+- ...
+
+Artifacts
+- Full outputs: /tmp/ai-team-consults/...
+```
+
+Keep the external consultation invisible when it adds no important decision context. When it matters, attribute important observations and make clear that Codex owns the final decision.
