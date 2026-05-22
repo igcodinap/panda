@@ -330,7 +330,7 @@ def now_iso() -> str:
 
 
 def default_session_root() -> Path:
-    return Path(tempfile.gettempdir()) / "ai-team-sessions"
+    return Path(tempfile.gettempdir()) / "panda-sessions"
 
 
 def validate_session_id(session_id: str) -> None:
@@ -622,7 +622,7 @@ def build_commands(
             "run",
             "--pure",
             "--title",
-            f"ai-team-{args.mode}-{args.role}",
+            f"panda-{args.mode}-{args.role}",
             "--dir",
             str(run_cwd),
         ]
@@ -643,7 +643,7 @@ def build_commands(
 
 def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    output_dir = args.output_dir or Path(tempfile.gettempdir()) / "ai-team-consults" / stamp
+    output_dir = args.output_dir or Path(tempfile.gettempdir()) / "panda-consults" / stamp
     output_dir.mkdir(parents=True, exist_ok=True)
     isolated_cwd = output_dir / "isolated-cwd"
     isolated_cwd.mkdir(exist_ok=True)
