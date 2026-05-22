@@ -42,30 +42,92 @@ python3 /Users/howdy/.codex/skills/ai-team/scripts/consult_ai_team.py \
 The runner:
 
 - Calls `claude -p` and/or `opencode run` when available.
+- Defaults to one-shot consultations. Use session mode only when the user asks for a conversation, persistent session, or to continue an AI-team thread.
 - Defaults to `--approval-mode unsupervised`, so Claude Code and OpenCode auto-approve their own local tool prompts instead of blocking Codex.
 - Defaults to `--execution auto`, which runs multiple collaborators in parallel for `advisory` and `explore` mode, while keeping `patch` mode sequential as a conservative guardrail. `patch` mode rejects explicit parallel execution.
 - Runs `advisory` consultations in an isolated temporary directory by default.
 - Runs `explore` and `patch` consultations from the workspace so collaborators can inspect the repo.
 - Allows shell commands in `explore` mode for inspection, testing, builds, logs, git state, and research.
 - Asks collaborators to avoid source edits outside `patch` mode and to report any changed files.
-- Writes each response plus a manifest under `/tmp/ai-team-consults/...` unless `--output-dir` is provided.
+- Writes each one-shot response plus a manifest under `/tmp/ai-team-consults/...` unless `--output-dir` is provided.
 
-Use `--prompt-file` for longer prompts, `--workspace` to target a repo explicitly, `--approval-mode supervised` to disable collaborator auto-approval, `--execution parallel` or `--execution sequential` to override auto execution, and `--dry-run` to inspect commands without calling the tools. Environment overrides are also supported with `AI_TEAM_EXECUTION` and `AI_TEAM_APPROVAL_MODE`; invalid values are rejected.
+Use `--prompt-file` for longer prompts, `--workspace` to target a repo explicitly, `--approval-mode supervised` to disable collaborator auto-approval, `--execution parallel` or `--execution sequential` to override auto execution, `--profile fast|balanced|deep` to choose cost/depth, and `--dry-run` to inspect commands without calling the tools. Use `--session` to create a persistent AI-team session, `--session <id>` to continue it, `--session-dir` to choose where session state lives, and `--straggler-timeout` to bound how long a session turn waits for lagging collaborators after another collaborator has finished. Environment overrides are also supported with `AI_TEAM_EXECUTION`, `AI_TEAM_APPROVAL_MODE`, and `OPENCODE_MODEL`; invalid values are rejected.
 
 When Codex runs the runner with OpenCode enabled, execute it outside the filesystem sandbox. OpenCode writes to its own state database under `~/.local/share/opencode`; sandboxed runs can fail with SQLite checkpoint errors such as `PRAGMA wal_checkpoint(PASSIVE)`. Codex may still need one host-level approval to launch the runner outside the sandbox, but Claude Code and OpenCode should not pause for their own internal approvals after launch.
 
-Pin models when repeatability matters:
+Use model profiles to balance quality and cost:
+
+- `fast`: Claude `sonnet`, requested effort `medium`; OpenCode `opencode-go/glm-5.1`.
+- `balanced`: Claude `sonnet`, requested effort `high`; OpenCode `opencode-go/glm-5.1`.
+- `deep`: Claude `opus`, requested effort `max`; OpenCode `opencode-go/glm-5.1`.
+
+Role defaults:
+
+- `brainstorm`, `debugging`, and `code-review` use `balanced`.
+- `research`, `planning`, and `implementation-review` use `deep`.
+- `test-plan` uses `fast`.
+
+Use `fast` for quick checks:
+
+```bash
+python3 /Users/howdy/.codex/skills/ai-team/scripts/consult_ai_team.py \
+  --tool both \
+  --profile fast \
+  --prompt "Quickly sanity-check this approach."
+```
+
+Planning and research default to `deep` by role:
+
+```bash
+python3 /Users/howdy/.codex/skills/ai-team/scripts/consult_ai_team.py \
+  --tool both \
+  --role planning \
+  --prompt "Create an implementation plan for this change."
+```
+
+Pin models when repeatability matters, or combine a profile with explicit overrides:
 
 ```bash
 python3 /Users/howdy/.codex/skills/ai-team/scripts/consult_ai_team.py \
   --tool both \
   --mode explore \
+  --profile deep \
   --claude-model sonnet \
-  --opencode-model "opencode-go/glm-5.1" \
+  --claude-effort high \
   --prompt "Inspect the failing tests and recommend the smallest fix."
 ```
 
-If no model is provided, Claude Code uses its configured default and OpenCode uses `opencode-go/glm-5.1`.
+Resolution precedence is: explicit `--claude-model`, `--claude-effort`, and `--opencode-model`; explicit `--profile`; environment defaults such as `OPENCODE_MODEL`; role default profile; then the hard fallback. Claude effort is applied only when the installed Claude Code CLI exposes `--effort`; otherwise the runner omits that flag and records the requested/effective effort in the manifest without failing. OpenCode GLM 5.1 currently has empty `variants` metadata, so the runner passes only `--model` and never `--variant` for it.
+
+## Session Mode
+
+Use session mode when the user wants a multi-turn AI-team conversation:
+
+```bash
+python3 /Users/howdy/.codex/skills/ai-team/scripts/consult_ai_team.py \
+  --session \
+  --tool both \
+  --mode explore \
+  --role implementation-review \
+  --prompt "Start a session about this implementation plan."
+```
+
+The runner prints a session ID. Continue with:
+
+```bash
+python3 /Users/howdy/.codex/skills/ai-team/scripts/consult_ai_team.py \
+  --session "<session-id>" \
+  --prompt "Follow-up from the user: ..."
+```
+
+Session mode:
+
+- Stores state under the temp app directory by default: `ai-team-sessions/<session-id>/`.
+- Writes each turn under `turns/001`, `turns/002`, and so on.
+- Uses native Claude Code and OpenCode sessions where available.
+- Uses a stable per-session isolated directory for `advisory` turns so native session resume works across turns.
+- Treats each invocation as exactly one visible turn. Codex must summarize the turn to the user and wait for user input before continuing.
+- Does not classify silence as stuck. It records hard timeouts, straggler timeouts, and tool failures as degraded turns, then returns partial results for Codex and the user to decide the next move.
 
 ## Prompt Shape
 
@@ -112,8 +174,9 @@ For deeper prompt patterns, read `references/prompt-patterns.md`.
 
 ## Model And Usage Metadata
 
-- Claude Code: pass `--claude-model` to pin the model. Claude supports JSON output formats; use them when token/cost metadata needs to be harvested from a run.
-- OpenCode: defaults to `opencode-go/glm-5.1`. Pass `--opencode-model` to override it. Use `opencode stats --models`, `opencode run --format json`, or `opencode export <sessionID>` when token/cost/model details need inspection.
+- Claude Code: profiles pass `--model`; use `--claude-model` and `--claude-effort` for explicit overrides. The runner passes `--effort` only when the installed CLI supports it. Claude supports JSON output formats; use them when token/cost metadata needs to be harvested from a run.
+- OpenCode: profiles use `opencode-go/glm-5.1`. Pass `--opencode-model` to override it. GLM 5.1 should receive only `--model`, not `--variant`. Use `opencode stats --models`, `opencode run --format json`, or `opencode export <sessionID>` when token/cost/model details need inspection.
+- Runner manifests record `profile`, `profile_source`, `cost_tier`, `effective_models`, `effective_effort`, `effort_support`, `applied_effort`, and best-effort requested model/effort fields.
 - Treat usage metadata as best-effort unless the runner explicitly captures it for that run. When exact accounting matters, verify against the tool's native stats/export output.
 
 ## Adaptive Reporting

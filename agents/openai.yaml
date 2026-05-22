@@ -1,4 +1,4 @@
 interface:
   display_name: "AI Team"
-  short_description: "Consult Claude Code and OpenCode as collaborators"
-  default_prompt: "Use $ai-team to get independent implementation perspectives from Claude Code and OpenCode before deciding; also trigger this for aiteam or ait."
+  short_description: "Consult Claude Code and OpenCode with cost-aware profiles"
+  default_prompt: "Use $ai-team, aiteam, or ait to get independent perspectives from Claude Code and OpenCode; use fast, balanced, or deep profiles, and ask for a session when a multi-turn team conversation would help."
