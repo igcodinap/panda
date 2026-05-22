@@ -27,6 +27,8 @@ ROLE_GUIDANCE = {
 
 DEFAULT_OPENCODE_MODEL = "opencode-go/glm-5.1"
 DEFAULT_APPROVAL_MODE = "unsupervised"
+EXECUTION_CHOICES = ("auto", "parallel", "sequential")
+APPROVAL_MODE_CHOICES = ("unsupervised", "supervised")
 
 MODE_GUIDANCE = {
     "advisory": """Rules:
@@ -58,13 +60,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mode", choices=sorted(MODE_GUIDANCE), default="explore")
     parser.add_argument(
         "--execution",
-        choices=["auto", "parallel", "sequential"],
+        choices=EXECUTION_CHOICES,
         default=os.environ.get("AI_TEAM_EXECUTION", "auto"),
         help="Run multiple tools in parallel, sequentially, or auto mode. Auto parallelizes advisory/explore and serializes patch.",
     )
     parser.add_argument(
         "--approval-mode",
-        choices=["unsupervised", "supervised"],
+        choices=APPROVAL_MODE_CHOICES,
         default=os.environ.get("AI_TEAM_APPROVAL_MODE", DEFAULT_APPROVAL_MODE),
         help="Whether Claude Code/OpenCode should auto-approve their own tool prompts. Defaults to unsupervised.",
     )
@@ -83,7 +85,18 @@ def parse_args() -> argparse.Namespace:
         help=f"OpenCode model in provider/model format. Defaults to {DEFAULT_OPENCODE_MODEL}.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print commands without running tools.")
-    return parser.parse_args()
+    args = parser.parse_args()
+    validate_choice(parser, "AI_TEAM_EXECUTION/--execution", args.execution, EXECUTION_CHOICES)
+    validate_choice(parser, "AI_TEAM_APPROVAL_MODE/--approval-mode", args.approval_mode, APPROVAL_MODE_CHOICES)
+    if args.mode == "patch" and args.execution == "parallel":
+        parser.error("--execution parallel is not allowed with --mode patch; patch consultations run sequentially.")
+    return args
+
+
+def validate_choice(parser: argparse.ArgumentParser, label: str, value: str, choices: Iterable[str]) -> None:
+    if value in choices:
+        return
+    parser.error(f"{label} must be one of: {', '.join(choices)}")
 
 
 def read_prompt(args: argparse.Namespace) -> str:
@@ -173,6 +186,21 @@ def run_tool(name: str, command: list[str], cwd: Path, timeout: int, dry_run: bo
     return result
 
 
+def failed_tool_result(name: str, command: list[str], cwd: Path, exc: Exception) -> dict:
+    now = dt.datetime.now(dt.timezone.utc).isoformat()
+    return {
+        "tool": name,
+        "command": command,
+        "cwd": str(cwd),
+        "started_at": now,
+        "returncode": -1,
+        "timed_out": False,
+        "stdout": "",
+        "stderr": f"Unhandled runner error for {name}: {type(exc).__name__}: {exc}",
+        "finished_at": now,
+    }
+
+
 def write_response(output_dir: Path, result: dict) -> None:
     body = result["stdout"].strip()
     if result["stderr"].strip():
@@ -186,6 +214,8 @@ def write_response(output_dir: Path, result: dict) -> None:
 
 def should_run_parallel(execution: str, mode: str, tool_count: int) -> bool:
     if tool_count < 2:
+        return False
+    if mode == "patch":
         return False
     if execution == "parallel":
         return True
@@ -259,10 +289,16 @@ def main() -> int:
             }
             for future in as_completed(futures):
                 name = futures[future]
-                raw_results[name] = future.result()
+                try:
+                    raw_results[name] = future.result()
+                except Exception as exc:
+                    raw_results[name] = failed_tool_result(name, commands[name], run_cwd, exc)
     else:
         for name, command in commands.items():
-            raw_results[name] = run_tool(name, command, run_cwd, args.timeout, args.dry_run)
+            try:
+                raw_results[name] = run_tool(name, command, run_cwd, args.timeout, args.dry_run)
+            except Exception as exc:
+                raw_results[name] = failed_tool_result(name, command, run_cwd, exc)
 
     results = []
     for name in commands:
