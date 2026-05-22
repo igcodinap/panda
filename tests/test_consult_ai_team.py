@@ -58,6 +58,11 @@ class ArgumentValidationTests(unittest.TestCase):
         args = self.parse_with(["--session", "--prompt", "test"])
         self.assertEqual(args.session, "")
 
+    def test_default_tool_runs_all_cores(self) -> None:
+        args = self.parse_with(["--prompt", "test"])
+        self.assertEqual(args.tool, "all")
+        self.assertEqual(consult_ai_team.requested_tools(args.tool), ["claude", "opencode", "qwen"])
+
     def test_invalid_profile_is_rejected(self) -> None:
         with self.assertRaises(SystemExit):
             self.parse_with(["--profile", "huge", "--prompt", "test"])
@@ -110,6 +115,10 @@ class ProfileResolutionTests(unittest.TestCase):
                     resolution["effective_models"]["opencode"],
                     consult_ai_team.DEFAULT_OPENCODE_MODEL,
                 )
+                self.assertEqual(
+                    resolution["effective_models"]["qwen"],
+                    consult_ai_team.DEFAULT_QWEN_MODEL,
+                )
 
     def test_explicit_profile_overrides_role_default(self) -> None:
         args = self.parse_with(["--role", "planning", "--profile", "fast", "--prompt", "test"])
@@ -140,6 +149,18 @@ class ProfileResolutionTests(unittest.TestCase):
         self.assertEqual(resolution["effective_effort"]["claude"], "high")
         self.assertEqual(resolution["effective_models"]["opencode"], "provider/model")
 
+    def test_qwen_model_flag_overrides_profile(self) -> None:
+        args = self.parse_with([
+            "--profile",
+            "deep",
+            "--qwen-model",
+            "provider/qwen",
+            "--prompt",
+            "test",
+        ])
+
+        self.assertEqual(args.profile_resolution["effective_models"]["qwen"], "provider/qwen")
+
     def test_opencode_env_default_is_used_when_profile_is_not_explicit(self) -> None:
         args = self.parse_with(["--role", "planning", "--prompt", "test"], {"OPENCODE_MODEL": "provider/env"})
 
@@ -165,6 +186,32 @@ class ProfileResolutionTests(unittest.TestCase):
         self.assertIn("--model", commands["opencode"])
         self.assertIn(consult_ai_team.DEFAULT_OPENCODE_MODEL, commands["opencode"])
         self.assertNotIn("--variant", commands["opencode"])
+
+    def test_qwen_command_uses_qwen_model_without_variant(self) -> None:
+        args = self.parse_with(["--tool", "qwen", "--profile", "deep", "--prompt", "test"])
+
+        commands, _ = consult_ai_team.build_commands(args, "prompt", Path("/tmp"))
+
+        self.assertEqual(list(commands), ["qwen"])
+        self.assertIn("--model", commands["qwen"])
+        self.assertIn(consult_ai_team.DEFAULT_QWEN_MODEL, commands["qwen"])
+        self.assertNotIn("--variant", commands["qwen"])
+
+    def test_all_tool_runs_three_cores(self) -> None:
+        args = self.parse_with(["--tool", "all", "--profile", "fast", "--prompt", "test"])
+
+        with patch.object(consult_ai_team, "claude_supports_effort", return_value=False):
+            commands, _ = consult_ai_team.build_commands(args, "prompt", Path("/tmp"))
+
+        self.assertEqual(list(commands), ["claude", "opencode", "qwen"])
+
+    def test_both_tool_remains_legacy_claude_and_glm(self) -> None:
+        args = self.parse_with(["--tool", "both", "--profile", "fast", "--prompt", "test"])
+
+        with patch.object(consult_ai_team, "claude_supports_effort", return_value=False):
+            commands, _ = consult_ai_team.build_commands(args, "prompt", Path("/tmp"))
+
+        self.assertEqual(list(commands), ["claude", "opencode"])
 
 
 class FailureResultTests(unittest.TestCase):
@@ -228,6 +275,7 @@ class ManifestTests(unittest.TestCase):
             self.assertEqual(manifest["cost_tier"], "high")
             self.assertEqual(manifest["effective_models"]["claude"], "opus")
             self.assertEqual(manifest["effective_models"]["opencode"], consult_ai_team.DEFAULT_OPENCODE_MODEL)
+            self.assertEqual(manifest["effective_models"]["qwen"], consult_ai_team.DEFAULT_QWEN_MODEL)
             self.assertEqual(manifest["effective_effort"]["claude"], "max")
             self.assertEqual(manifest["applied_effort"]["claude"], "max")
             self.assertTrue(manifest["effort_support"]["claude"])
@@ -341,12 +389,15 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(session["turn_count"], 1)
             self.assertEqual(session["profile"], "balanced")
             self.assertEqual(session["effective_models"]["claude"], "sonnet")
+            self.assertEqual(session["effective_models"]["qwen"], consult_ai_team.DEFAULT_QWEN_MODEL)
             self.assertEqual(session["effective_effort"]["claude"], "high")
             self.assertIsNone(session["tool_session_ids"]["claude"])
+            self.assertIsNone(session["tool_session_ids"]["qwen"])
             self.assertTrue((session_dir / "turns" / "001" / "manifest.json").exists())
             manifest = json.loads((session_dir / "turns" / "001" / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["profile"], "balanced")
             self.assertEqual(manifest["effective_models"]["opencode"], consult_ai_team.DEFAULT_OPENCODE_MODEL)
+            self.assertEqual(manifest["effective_models"]["qwen"], consult_ai_team.DEFAULT_QWEN_MODEL)
 
             args = self.parse_with([
                 "--session",
@@ -482,6 +533,39 @@ class SessionTests(unittest.TestCase):
             prompt = (session_dir / "turns" / "002" / "prompt.txt").read_text(encoding="utf-8")
             self.assertIn("Role: planning", prompt)
 
+    def test_session_continuation_inherits_tool_set(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = self.parse_with([
+                "--session",
+                "--session-dir",
+                tmpdir,
+                "--tool",
+                "qwen",
+                "--dry-run",
+                "--prompt",
+                "first",
+            ])
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_session(args, "first")
+
+            session_dir = next(Path(tmpdir).iterdir())
+            session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+            args = self.parse_with([
+                "--session",
+                session["session_id"],
+                "--session-dir",
+                tmpdir,
+                "--dry-run",
+                "--prompt",
+                "second",
+            ])
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_session(args, "second")
+
+            turn_2 = json.loads((session_dir / "turns" / "002" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(turn_2["tool"], "qwen")
+            self.assertEqual([tool["tool"] for tool in turn_2["tools"]], ["qwen"])
+
     def test_running_session_with_live_pid_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             session_dir = Path(tmpdir) / "active"
@@ -531,11 +615,12 @@ class SessionTests(unittest.TestCase):
             self.assertIsNone(session["runner_pid"])
 
     def test_session_command_construction_uses_native_sessions(self) -> None:
-        args = self.parse_with(["--session", "--tool", "both", "--prompt", "test"])
+        args = self.parse_with(["--session", "--tool", "all", "--prompt", "test"])
         session = {
             "tool_session_ids": {
                 "claude": None,
                 "opencode": None,
+                "qwen": None,
             }
         }
 
@@ -544,12 +629,52 @@ class SessionTests(unittest.TestCase):
         self.assertIn("--session-id", commands["claude"])
         self.assertNotIn("--no-session-persistence", commands["claude"])
         self.assertIn("--format", commands["opencode"])
+        self.assertIn("--format", commands["qwen"])
         self.assertIn("opencode", json_tools)
+        self.assertIn("qwen", json_tools)
 
         session["tool_session_ids"]["opencode"] = "ses_123"
+        session["tool_session_ids"]["qwen"] = "ses_qwen"
         commands, _ = consult_ai_team.build_commands(args, "prompt", Path("/tmp"), session=session)
         self.assertIn("--resume", commands["claude"])
         self.assertIn("--session", commands["opencode"])
+        self.assertIn("ses_qwen", commands["qwen"])
+
+    def test_session_persists_qwen_native_session_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = self.parse_with([
+                "--session",
+                "--session-dir",
+                tmpdir,
+                "--tool",
+                "qwen",
+                "--prompt",
+                "first",
+            ])
+
+            def fake_run_session_tools(*_args, **_kwargs):
+                return {
+                    "qwen": {
+                        "tool": "qwen",
+                        "command": ["opencode"],
+                        "cwd": "/tmp",
+                        "started_at": "start",
+                        "returncode": 0,
+                        "timed_out": False,
+                        "stdout": "ok",
+                        "stderr": "",
+                        "finished_at": "finish",
+                        "tool_session_id": "ses_qwen",
+                    }
+                }
+
+            with patch.object(consult_ai_team, "run_session_tools", side_effect=fake_run_session_tools):
+                with redirect_stdout(io.StringIO()):
+                    consult_ai_team.run_session(args, "first")
+
+            session_dir = next(Path(tmpdir).iterdir())
+            session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+            self.assertEqual(session["tool_session_ids"]["qwen"], "ses_qwen")
 
     def test_session_tools_straggler_timeout_returns_partial_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

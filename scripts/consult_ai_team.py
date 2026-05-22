@@ -31,27 +31,32 @@ ROLE_GUIDANCE = {
 }
 
 DEFAULT_OPENCODE_MODEL = "opencode-go/glm-5.1"
+DEFAULT_QWEN_MODEL = "opencode-go/qwen3.6-plus"
 DEFAULT_APPROVAL_MODE = "unsupervised"
 EXECUTION_CHOICES = ("auto", "parallel", "sequential")
 APPROVAL_MODE_CHOICES = ("unsupervised", "supervised")
 CLAUDE_EFFORT_CHOICES = ("low", "medium", "high", "xhigh", "max")
+TOOL_CHOICES = ("claude", "opencode", "qwen", "both", "all")
 MODEL_PROFILES = {
     "fast": {
         "claude_model": "sonnet",
         "claude_effort": "medium",
         "opencode_model": DEFAULT_OPENCODE_MODEL,
+        "qwen_model": DEFAULT_QWEN_MODEL,
         "cost_tier": "low",
     },
     "balanced": {
         "claude_model": "sonnet",
         "claude_effort": "high",
         "opencode_model": DEFAULT_OPENCODE_MODEL,
+        "qwen_model": DEFAULT_QWEN_MODEL,
         "cost_tier": "medium",
     },
     "deep": {
         "claude_model": "opus",
         "claude_effort": "max",
         "opencode_model": DEFAULT_OPENCODE_MODEL,
+        "qwen_model": DEFAULT_QWEN_MODEL,
         "cost_tier": "high",
     },
 }
@@ -70,6 +75,7 @@ DEFAULT_STRAGGLER_TIMEOUT = 120
 SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 CLAUDE_EFFORT_SUPPORT_CACHE: dict[str, bool] = {}
 EXPLICIT_ARG_FLAGS = {
+    "--tool": "tool",
     "--mode": "mode",
     "--execution": "execution",
     "--approval-mode": "approval_mode",
@@ -78,6 +84,7 @@ EXPLICIT_ARG_FLAGS = {
     "--claude-model": "claude_model",
     "--claude-effort": "claude_effort",
     "--opencode-model": "opencode_model",
+    "--qwen-model": "qwen_model",
 }
 
 MODE_GUIDANCE = {
@@ -107,7 +114,12 @@ MODE_GUIDANCE = {
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     explicit_flags = collect_explicit_flags(sys.argv[1:])
-    parser.add_argument("--tool", choices=["claude", "opencode", "both"], default="both")
+    parser.add_argument(
+        "--tool",
+        choices=TOOL_CHOICES,
+        default="all",
+        help="Collaborator core to run. 'both' is legacy Claude+GLM; 'all' runs Claude+GLM+Qwen.",
+    )
     parser.add_argument("--mode", choices=sorted(MODE_GUIDANCE), default="explore")
     parser.add_argument(
         "--execution",
@@ -157,6 +169,10 @@ def parse_args() -> argparse.Namespace:
         "--opencode-model",
         help=f"OpenCode model in provider/model format. Defaults through profile/env to {DEFAULT_OPENCODE_MODEL}.",
     )
+    parser.add_argument(
+        "--qwen-model",
+        help=f"OpenCode Qwen model in provider/model format. Defaults through profile to {DEFAULT_QWEN_MODEL}.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print commands without running tools.")
     args = parser.parse_args()
     validate_choice(parser, "AI_TEAM_EXECUTION/--execution", args.execution, EXECUTION_CHOICES)
@@ -201,6 +217,7 @@ def resolve_profile(args: argparse.Namespace) -> dict:
     env_opencode_model = os.environ.get("OPENCODE_MODEL")
     claude_model = args.claude_model or profile["claude_model"]
     claude_effort = args.claude_effort or profile["claude_effort"]
+    qwen_model = args.qwen_model or profile["qwen_model"]
     if args.opencode_model:
         opencode_model = args.opencode_model
     elif args.profile:
@@ -217,6 +234,7 @@ def resolve_profile(args: argparse.Namespace) -> dict:
         "effective_models": {
             "claude": claude_model,
             "opencode": opencode_model,
+            "qwen": qwen_model,
         },
         "effective_effort": {
             "claude": claude_effort,
@@ -224,6 +242,7 @@ def resolve_profile(args: argparse.Namespace) -> dict:
         "requested_models": {
             "claude": args.claude_model,
             "opencode": args.opencode_model or env_opencode_model or DEFAULT_OPENCODE_MODEL,
+            "qwen": args.qwen_model or DEFAULT_QWEN_MODEL,
         },
         "requested_effort": {
             "claude": args.claude_effort,
@@ -407,6 +426,7 @@ def make_session(args: argparse.Namespace, workspace: Path) -> tuple[dict, Path,
         "updated_at": now_iso(),
         "status": "created",
         "workspace": str(workspace),
+        "tool": args.tool,
         "mode": args.mode,
         "role": args.role,
         "approval_mode": args.approval_mode,
@@ -414,6 +434,7 @@ def make_session(args: argparse.Namespace, workspace: Path) -> tuple[dict, Path,
         "tool_session_ids": {
             "claude": None,
             "opencode": None,
+            "qwen": None,
         },
         "models": dict(profile_metadata["effective_models"]),
         "profile": profile_metadata["profile"],
@@ -435,7 +456,7 @@ def make_session(args: argparse.Namespace, workspace: Path) -> tuple[dict, Path,
 
 def inherit_session_args(args: argparse.Namespace, session: dict) -> None:
     explicit_flags = getattr(args, "explicit_flags", set())
-    for field in ("mode", "role", "approval_mode", "execution"):
+    for field in ("tool", "mode", "role", "approval_mode", "execution"):
         if field not in explicit_flags and session.get(field):
             setattr(args, field, session[field])
     if "profile" not in explicit_flags and session.get("profile"):
@@ -447,6 +468,8 @@ def inherit_session_args(args: argparse.Namespace, session: dict) -> None:
         args.claude_model = requested_models["claude"]
     if "opencode_model" not in explicit_flags and requested_models.get("opencode"):
         args.opencode_model = requested_models["opencode"]
+    if "qwen_model" not in explicit_flags and requested_models.get("qwen"):
+        args.qwen_model = requested_models["qwen"]
     if "claude_effort" not in explicit_flags and requested_effort.get("claude"):
         args.claude_effort = requested_effort["claude"]
     args.profile_resolution = resolve_profile(args)
@@ -561,13 +584,21 @@ def should_run_parallel(execution: str, mode: str, tool_count: int) -> bool:
     return mode in {"advisory", "explore"}
 
 
+def requested_tools(tool: str) -> list[str]:
+    if tool == "all":
+        return ["claude", "opencode", "qwen"]
+    if tool == "both":
+        return ["claude", "opencode"]
+    return [tool]
+
+
 def build_commands(
     args: argparse.Namespace,
     prompt: str,
     run_cwd: Path,
     session: Optional[dict] = None,
 ) -> tuple[dict[str, list[str]], set[str]]:
-    requested = ["claude", "opencode"] if args.tool == "both" else [args.tool]
+    requested = requested_tools(args.tool)
     commands: dict[str, list[str]] = {}
     json_tools: set[str] = set()
     profile_resolution = get_profile_resolution(args)
@@ -615,29 +646,37 @@ def build_commands(
         claude_command.append(prompt)
         commands["claude"] = claude_command
 
-    if "opencode" in requested:
+    def add_opencode_backed_command(name: str, model_key: str, title_suffix: Optional[str] = None) -> None:
         opencode_bin = shutil.which(args.opencode_bin) or args.opencode_bin
-        commands["opencode"] = [
+        title = f"panda-{args.mode}-{args.role}"
+        if title_suffix:
+            title = f"{title}-{title_suffix}"
+        commands[name] = [
             opencode_bin,
             "run",
             "--pure",
             "--title",
-            f"panda-{args.mode}-{args.role}",
+            title,
             "--dir",
             str(run_cwd),
         ]
         if session is not None:
-            json_tools.add("opencode")
-            opencode_session_id = session.setdefault("tool_session_ids", {}).get("opencode")
+            json_tools.add(name)
+            opencode_session_id = session.setdefault("tool_session_ids", {}).get(name)
             if opencode_session_id:
-                commands["opencode"].extend(["--session", opencode_session_id])
-            commands["opencode"].extend(["--format", "json"])
+                commands[name].extend(["--session", opencode_session_id])
+            commands[name].extend(["--format", "json"])
         if args.approval_mode == "unsupervised":
-            commands["opencode"].append("--dangerously-skip-permissions")
-        opencode_model = profile_resolution["effective_models"]["opencode"]
+            commands[name].append("--dangerously-skip-permissions")
+        opencode_model = profile_resolution["effective_models"][model_key]
         if opencode_model:
-            commands["opencode"].extend(["--model", opencode_model])
-        commands["opencode"].append(prompt)
+            commands[name].extend(["--model", opencode_model])
+        commands[name].append(prompt)
+
+    if "opencode" in requested:
+        add_opencode_backed_command("opencode", "opencode")
+    if "qwen" in requested:
+        add_opencode_backed_command("qwen", "qwen", "qwen")
     return commands, json_tools
 
 
@@ -681,6 +720,7 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
 
     manifest = {
         "schema_version": SCHEMA_VERSION,
+        "tool": args.tool,
         "mode": args.mode,
         "execution": "parallel" if run_parallel else "sequential",
         "requested_execution": args.execution,
@@ -908,6 +948,7 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
         "runner_pid": os.getpid(),
         "runner_started_at": now_iso(),
         "workspace": str(workspace),
+        "tool": args.tool,
         "mode": args.mode,
         "role": args.role,
         "approval_mode": args.approval_mode,
@@ -949,8 +990,9 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
                 {name} if name in json_tools else set(),
             ))
 
-    if "opencode" in raw_results and raw_results["opencode"].get("tool_session_id"):
-        session.setdefault("tool_session_ids", {})["opencode"] = raw_results["opencode"]["tool_session_id"]
+    for name in json_tools:
+        if name in raw_results and raw_results[name].get("tool_session_id"):
+            session.setdefault("tool_session_ids", {})[name] = raw_results[name]["tool_session_id"]
 
     results = []
     for name in commands:
@@ -983,6 +1025,7 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
         "output_dir": str(turn_dir),
         "session_dir": str(session_path),
         "workspace": str(workspace),
+        "tool": args.tool,
         "run_cwd": str(run_cwd),
         "straggler_timeout": args.straggler_timeout,
         "timeout": args.timeout,

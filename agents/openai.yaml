@@ -1,4 +1,4 @@
 interface:
   display_name: "Panda"
-  short_description: "Consult Claude Code and OpenCode as Panda's collaborator cores"
-  default_prompt: "Use $panda, panda, ait, aiteam, or ai-team to get independent perspectives from Claude Code and OpenCode; use fast, balanced, or deep profiles, and ask for a session when a multi-turn team conversation would help."
+  short_description: "Consult Claude Code, OpenCode GLM, and OpenCode Qwen as Panda's collaborator cores"
+  default_prompt: "Use $panda, panda, ait, aiteam, or ai-team to get independent perspectives from Claude Code, OpenCode GLM 5.1, and OpenCode Qwen 3.6 Plus; use fast, balanced, or deep profiles, and ask for a session when a multi-turn team conversation would help."
