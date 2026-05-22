@@ -1,0 +1,35 @@
+SKILL.md
+  s_411e83d3dda5d6::t_568461a73355ed 183
+  s_411e83d3dda5d6::t_deaaed263cad16 45,213
+tests/test_consult_ai_team.py
+  s_411e83d3dda5d6::t_038115eef03235 322-345
+  s_411e83d3dda5d6::t_83726e06de3d35 425-429,431-432,442-446,448-449
+  s_411e83d3dda5d6::t_03b60e02cfd9b1 208-210,252,275,281
+  s_411e83d3dda5d6::t_f5cf741d0442a7 407,424,430,441,447,530,544
+  s_411e83d3dda5d6::t_1e99f2389190f1 617-618
+  s_411e83d3dda5d6::t_d7f4dc91016b84 276-280,282-283,315-316
+scripts/consult_ai_team.py
+  s_411e83d3dda5d6::t_1ce68961409b0a 272,282-283
+  s_411e83d3dda5d6::t_eddc5173c8b33d 1040
+  s_411e83d3dda5d6::t_f010038792a730 39,121
+  s_411e83d3dda5d6::t_41ea3f231b25fa 441,452
+  s_411e83d3dda5d6::t_6deaa77ca272cc 740
+  s_411e83d3dda5d6::t_2955e6f20556e2 281,284
+  s_411e83d3dda5d6::t_ed9c81ad6592e9 964,970
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "4c9f379925257b3b8a0fc67cb9f14f4d4c246eff",
+  "prompts": {},
+  "sessions": {
+    "s_411e83d3dda5d6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e50cc-96e8-7082-8a50-95d39f8659b5",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
