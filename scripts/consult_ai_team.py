@@ -36,7 +36,7 @@ DEFAULT_APPROVAL_MODE = "unsupervised"
 EXECUTION_CHOICES = ("auto", "parallel", "sequential")
 APPROVAL_MODE_CHOICES = ("unsupervised", "supervised")
 CLAUDE_EFFORT_CHOICES = ("low", "medium", "high", "xhigh", "max")
-TOOL_CHOICES = ("claude", "opencode", "qwen", "both", "all")
+TOOL_CHOICES = ("claude", "opencode", "qwen", "all")
 MODEL_PROFILES = {
     "fast": {
         "claude_model": "sonnet",
@@ -118,7 +118,7 @@ def parse_args() -> argparse.Namespace:
         "--tool",
         choices=TOOL_CHOICES,
         default="all",
-        help="Collaborator core to run. 'both' is legacy Claude+GLM; 'all' runs Claude+GLM+Qwen.",
+        help="Collaborator core to run. 'all' runs Claude+GLM+Qwen.",
     )
     parser.add_argument("--mode", choices=sorted(MODE_GUIDANCE), default="explore")
     parser.add_argument(
@@ -269,12 +269,19 @@ def profile_manifest_metadata(args: argparse.Namespace) -> dict:
         "profile_source": resolution["profile_source"],
         "cost_tier": resolution["cost_tier"],
         "effective_models": dict(resolution["effective_models"]),
+        "active_models": active_models(args),
         "effective_effort": dict(resolution["effective_effort"]),
         "requested_models": dict(resolution["requested_models"]),
         "requested_effort": dict(resolution["requested_effort"]),
         "effort_support": dict(resolution["effort_support"]),
         "applied_effort": dict(resolution["applied_effort"]),
     }
+
+
+def active_models(args: argparse.Namespace) -> dict[str, str]:
+    resolution = get_profile_resolution(args)
+    models = resolution["effective_models"]
+    return {tool: models[tool] for tool in requested_tools(args.tool)}
 
 
 def claude_supports_effort(claude_bin: str) -> bool:
@@ -431,6 +438,7 @@ def make_session(args: argparse.Namespace, workspace: Path) -> tuple[dict, Path,
         "role": args.role,
         "approval_mode": args.approval_mode,
         "execution": args.execution,
+        "requested_tools": requested_tools(args.tool),
         "tool_session_ids": {
             "claude": None,
             "opencode": None,
@@ -441,6 +449,7 @@ def make_session(args: argparse.Namespace, workspace: Path) -> tuple[dict, Path,
         "profile_source": profile_metadata["profile_source"],
         "cost_tier": profile_metadata["cost_tier"],
         "effective_models": dict(profile_metadata["effective_models"]),
+        "active_models": dict(profile_metadata["active_models"]),
         "effective_effort": dict(profile_metadata["effective_effort"]),
         "requested_models": dict(profile_metadata["requested_models"]),
         "requested_effort": dict(profile_metadata["requested_effort"]),
@@ -587,8 +596,6 @@ def should_run_parallel(execution: str, mode: str, tool_count: int) -> bool:
 def requested_tools(tool: str) -> list[str]:
     if tool == "all":
         return ["claude", "opencode", "qwen"]
-    if tool == "both":
-        return ["claude", "opencode"]
     return [tool]
 
 
@@ -730,6 +737,7 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
         "output_dir": str(output_dir),
         "workspace": str(workspace),
         "run_cwd": str(run_cwd),
+        "requested_tools": requested_tools(args.tool),
         "tools": results,
     }
     manifest.update(profile_manifest_metadata(args))
@@ -953,11 +961,13 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
         "role": args.role,
         "approval_mode": args.approval_mode,
         "execution": args.execution,
+        "requested_tools": requested_tools(args.tool),
         "models": dict(profile_metadata["effective_models"]),
         "profile": profile_metadata["profile"],
         "profile_source": profile_metadata["profile_source"],
         "cost_tier": profile_metadata["cost_tier"],
         "effective_models": dict(profile_metadata["effective_models"]),
+        "active_models": dict(profile_metadata["active_models"]),
         "effective_effort": dict(profile_metadata["effective_effort"]),
         "requested_models": dict(profile_metadata["requested_models"]),
         "requested_effort": dict(profile_metadata["requested_effort"]),
@@ -1027,6 +1037,7 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
         "workspace": str(workspace),
         "tool": args.tool,
         "run_cwd": str(run_cwd),
+        "requested_tools": requested_tools(args.tool),
         "straggler_timeout": args.straggler_timeout,
         "timeout": args.timeout,
         "turn_status": current_turn_status,

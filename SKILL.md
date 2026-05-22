@@ -42,7 +42,7 @@ python3 /Users/howdy/.codex/skills/panda/scripts/consult_ai_team.py \
 The runner:
 
 - Calls `claude -p` and/or `opencode run` when available.
-- Defaults to `--tool all`, which runs Claude Code, OpenCode GLM 5.1, and OpenCode Qwen 3.6 Plus. Use `--tool both` for the legacy Claude+GLM pair, or `--tool claude`, `--tool opencode`, or `--tool qwen` for one core.
+- Defaults to `--tool all`, which runs Claude Code, OpenCode GLM 5.1, and OpenCode Qwen 3.6 Plus. Use `--tool claude`, `--tool opencode`, or `--tool qwen` for one core.
 - Defaults to one-shot consultations. Use session mode only when the user asks for a conversation, persistent session, or to continue a Panda thread.
 - Defaults to `--approval-mode unsupervised`, so Claude Code and OpenCode auto-approve their own local tool prompts instead of blocking Codex.
 - Defaults to `--execution auto`, which runs multiple collaborators in parallel for `advisory` and `explore` mode, while keeping `patch` mode sequential as a conservative guardrail. `patch` mode rejects explicit parallel execution.
@@ -180,7 +180,7 @@ For deeper prompt patterns, read `references/prompt-patterns.md`.
 - OpenCode GLM: profiles use `opencode-go/glm-5.1`. Pass `--opencode-model` to override it. GLM 5.1 should receive only `--model`, not `--variant`.
 - OpenCode Qwen: profiles use `opencode-go/qwen3.6-plus`. Pass `--qwen-model` to override it. Qwen 3.6 Plus should receive only `--model`, not `--variant`.
 - OpenCode usage: use `opencode stats --models`, `opencode run --format json`, or `opencode export <sessionID>` when token/cost/model details need inspection.
-- Runner manifests record `profile`, `profile_source`, `cost_tier`, `effective_models`, `effective_effort`, `effort_support`, `applied_effort`, and best-effort requested model/effort fields.
+- Runner manifests record `profile`, `profile_source`, `cost_tier`, profile-wide `effective_models`, launch-scoped `active_models`, `requested_tools`, `effective_effort`, `effort_support`, `applied_effort`, and best-effort requested model/effort fields.
 - Treat usage metadata as best-effort unless the runner explicitly captures it for that run. When exact accounting matters, verify against the tool's native stats/export output.
 
 ## Adaptive Reporting
@@ -210,7 +210,7 @@ OpenCode
 - Confirmed the sandbox/SQLite issue.
 
 Codex Decision
-- I patched both and verified with smoke tests.
+- I patched the issues and verified with smoke tests.
 ```
 
 Complex example:
