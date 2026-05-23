@@ -23,7 +23,7 @@ class ExecutionModeTests(unittest.TestCase):
         self.assertTrue(consult_ai_team.should_run_parallel("auto", "advisory", 2))
         self.assertTrue(consult_ai_team.should_run_parallel("auto", "explore", 2))
 
-    def test_auto_and_forced_parallel_keep_patch_sequential(self) -> None:
+    def test_patch_mode_never_parallelizes(self) -> None:
         self.assertFalse(consult_ai_team.should_run_parallel("auto", "patch", 2))
         self.assertFalse(consult_ai_team.should_run_parallel("parallel", "patch", 2))
 
@@ -50,9 +50,18 @@ class ArgumentValidationTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.parse_with(["--prompt", "test"], {"AI_TEAM_APPROVAL_MODE": "sure"})
 
-    def test_parallel_patch_is_rejected(self) -> None:
+    def test_patch_mode_is_disabled_with_friendly_message(self) -> None:
+        with patch.object(sys, "argv", ["consult_ai_team.py", "--mode", "patch", "--prompt", "test"]):
+            with patch.dict(os.environ, {}, clear=True):
+                stderr = io.StringIO()
+                with redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit):
+                        consult_ai_team.parse_args()
+        self.assertIn("Patch mode is disabled", stderr.getvalue())
+
+    def test_invalid_mode_is_rejected_after_custom_patch_check(self) -> None:
         with self.assertRaises(SystemExit):
-            self.parse_with(["--mode", "patch", "--execution", "parallel", "--prompt", "test"])
+            self.parse_with(["--mode", "unknown", "--prompt", "test"])
 
     def test_session_without_value_creates_new_session_mode(self) -> None:
         args = self.parse_with(["--session", "--prompt", "test"])
@@ -371,6 +380,145 @@ class ManifestTests(unittest.TestCase):
             self.assertIn("file prompt marker", claude_prompt)
 
 
+class ArtifactTests(unittest.TestCase):
+    def parse_with(self, argv: list[str]):
+        with patch.object(sys, "argv", ["consult_ai_team.py", *argv]):
+            with patch.dict(os.environ, {}, clear=True):
+                with redirect_stderr(io.StringIO()):
+                    return consult_ai_team.parse_args()
+
+    def test_four_section_summary_extraction(self) -> None:
+        text = """## Recommendation
+Do this.
+## Alternative worth considering
+Try that.
+## Risks or edge cases
+Careful here.
+## Verification plan
+Run tests.
+"""
+
+        fields = consult_ai_team.extract_summary_fields(text)
+
+        self.assertEqual(fields["recommendation"], "Do this.")
+        self.assertEqual(fields["alternative"], "Try that.")
+        self.assertEqual(fields["risks"], "Careful here.")
+        self.assertEqual(fields["verification_plan"], "Run tests.")
+
+    def test_bold_heading_summary_extraction(self) -> None:
+        text = """**Recommendation**
+Ship it.
+**Verification plan**
+Run the suite.
+"""
+
+        fields = consult_ai_team.extract_summary_fields(text)
+
+        self.assertEqual(fields["recommendation"], "Ship it.")
+        self.assertEqual(fields["verification_plan"], "Run the suite.")
+
+    def test_missing_headings_leave_summary_fields_null(self) -> None:
+        fields = consult_ai_team.extract_summary_fields("plain output")
+
+        self.assertIsNone(fields["recommendation"])
+        self.assertIsNone(fields["risks"])
+
+    def test_one_shot_dry_run_writes_evidence_and_summaries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = self.parse_with([
+                "--tool",
+                "claude",
+                "--dry-run",
+                "--output-dir",
+                tmpdir,
+                "--prompt",
+                "test",
+            ])
+            prompt = consult_ai_team.consultation_prompt(args.mode, args.role, args.approval_mode, "test")
+
+            with patch.object(consult_ai_team, "claude_supports_effort", return_value=False):
+                with redirect_stdout(io.StringIO()):
+                    consult_ai_team.run_one_shot(args, prompt)
+
+            evidence = json.loads((Path(tmpdir) / "evidence.json").read_text(encoding="utf-8"))
+            summary = json.loads((Path(tmpdir) / "claude.summary.json").read_text(encoding="utf-8"))
+            manifest = json.loads((Path(tmpdir) / "manifest.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(evidence["schema_version"], consult_ai_team.SCHEMA_VERSION)
+            self.assertEqual(evidence["findings"][0]["tool"], "claude")
+            self.assertEqual(summary["raw_output_path"], str(Path(tmpdir) / "claude.txt"))
+            self.assertIn("telemetry", manifest)
+            self.assertEqual(manifest["telemetry"]["tool_count"], 1)
+            self.assertEqual(manifest["telemetry"]["artifact_paths"]["evidence"], str(Path(tmpdir) / "evidence.json"))
+
+    def test_failed_and_empty_results_still_produce_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            failed = consult_ai_team.failed_tool_result(
+                "claude",
+                ["missing"],
+                output_dir,
+                RuntimeError("boom"),
+            )
+            failed["stdout"] = ""
+            consult_ai_team.write_response(output_dir, failed)
+
+            artifact_info = consult_ai_team.write_run_artifacts(output_dir, {"claude": failed}, ["claude"])
+
+            finding = artifact_info["evidence"]["findings"][0]
+            self.assertEqual(finding["status"], "failure")
+            self.assertEqual(finding["raw_output_path"], str(output_dir / "claude.txt"))
+
+    def test_oversized_summary_is_truncated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            result = {
+                "tool": "claude",
+                "command": ["claude"],
+                "cwd": str(output_dir),
+                "started_at": consult_ai_team.now_iso(),
+                "finished_at": consult_ai_team.now_iso(),
+                "returncode": 0,
+                "timed_out": False,
+                "stdout": "## Recommendation\n" + ("x" * (consult_ai_team.SUMMARY_MAX_CHARS * 2)),
+                "stderr": "",
+            }
+            consult_ai_team.normalize_result_metadata(result)
+            consult_ai_team.write_response(output_dir, result)
+
+            artifact_info = consult_ai_team.write_run_artifacts(output_dir, {"claude": result}, ["claude"])
+
+            summary_path = Path(artifact_info["summary_paths"]["claude"])
+            summary_text = summary_path.read_text(encoding="utf-8")
+            summary = json.loads(summary_text)
+            self.assertLessEqual(len(summary_text), consult_ai_team.SUMMARY_MAX_CHARS)
+            self.assertTrue(summary["truncated"])
+
+    def test_turn_summary_limit_is_enforced_for_long_paths(self) -> None:
+        evidence = {
+            "findings": [
+                {
+                    "tool": f"tool{i}",
+                    "status": "success",
+                    "recommendation": "x" * 5000,
+                    "risks": "y" * 5000,
+                    "verification_plan": "z" * 5000,
+                    "raw_output_path": "/very/deep/" + ("nested/" * 80) + f"tool{i}.txt",
+                    "truncated": False,
+                }
+                for i in range(6)
+            ]
+        }
+
+        summary = consult_ai_team.make_turn_summary("session", 1, "ok", None, evidence)
+
+        self.assertLessEqual(len(json.dumps(summary, indent=2) + "\n"), consult_ai_team.SESSION_MEMORY_MAX_CHARS)
+        self.assertTrue(summary.get("truncated"))
+
+    def test_latency_seconds_handles_bad_timestamps(self) -> None:
+        self.assertIsNone(consult_ai_team.latency_seconds({"started_at": "bad", "finished_at": "worse"}))
+
+
 class SessionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.effort_patch = patch.object(consult_ai_team, "claude_supports_effort", return_value=False)
@@ -392,10 +540,35 @@ class SessionTests(unittest.TestCase):
             '{"type":"text","sessionID":"ses_123","part":{"text":" world"}}',
         ])
 
-        session_id, text = consult_ai_team.parse_opencode_jsonl(raw)
+        session_id, text, usage = consult_ai_team.parse_opencode_jsonl(raw)
 
         self.assertEqual(session_id, "ses_123")
         self.assertEqual(text, "hello world")
+        self.assertEqual(usage, consult_ai_team.NULL_USAGE)
+
+    def test_opencode_jsonl_usage_extraction_skips_malformed_lines(self) -> None:
+        raw = "\n".join([
+            "{bad",
+            '{"type":"usage","usage":{"inputTokens":10,"outputTokens":4,"cacheReadTokens":2,"costUSD":0.01}}',
+            '{"type":"text","sessionID":"ses_456","part":{"text":"done"}}',
+        ])
+
+        session_id, text, usage = consult_ai_team.parse_opencode_jsonl(raw)
+
+        self.assertEqual(session_id, "ses_456")
+        self.assertEqual(text, "done")
+        self.assertEqual(usage["input_tokens"], 10)
+        self.assertEqual(usage["output_tokens"], 4)
+        self.assertEqual(usage["cache_read_tokens"], 2)
+        self.assertEqual(usage["cost_usd"], 0.01)
+
+    def test_usage_extraction_prefers_usage_container_over_top_level_defaults(self) -> None:
+        raw = '{"type":"usage","input_tokens":0,"usage":{"inputTokens":1500,"outputTokens":250}}'
+
+        _session_id, _text, usage = consult_ai_team.parse_opencode_jsonl(raw)
+
+        self.assertEqual(usage["input_tokens"], 1500)
+        self.assertEqual(usage["output_tokens"], 250)
 
     def test_session_dry_run_creates_and_continues_turns(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -665,6 +838,88 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(session["last_turn_status"], "degraded")
             self.assertIsNone(session["runner_pid"])
 
+    def test_patch_mode_session_continuation_is_rejected_clearly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session_dir = Path(tmpdir) / "old_patch"
+            session_dir.mkdir()
+            consult_ai_team.write_json(session_dir / "session.json", {
+                "schema_version": consult_ai_team.SCHEMA_VERSION,
+                "session_id": "old_patch",
+                "mode": "patch",
+                "status": "waiting_for_user",
+                "turn_count": 0,
+            })
+            args = self.parse_with([
+                "--session",
+                "old_patch",
+                "--session-dir",
+                tmpdir,
+                "--dry-run",
+                "--prompt",
+                "test",
+            ])
+
+            with self.assertRaises(SystemExit) as raised:
+                consult_ai_team.run_session(args, "test")
+
+            self.assertIn("Patch mode is disabled", str(raised.exception))
+
+    def test_patch_mode_session_is_rejected_even_with_explicit_mode_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session_dir = Path(tmpdir) / "old_patch"
+            session_dir.mkdir()
+            consult_ai_team.write_json(session_dir / "session.json", {
+                "schema_version": consult_ai_team.SCHEMA_VERSION,
+                "session_id": "old_patch",
+                "mode": "patch",
+                "status": "waiting_for_user",
+                "turn_count": 0,
+            })
+            args = self.parse_with([
+                "--session",
+                "old_patch",
+                "--session-dir",
+                tmpdir,
+                "--mode",
+                "explore",
+                "--dry-run",
+                "--prompt",
+                "test",
+            ])
+
+            with self.assertRaises(SystemExit) as raised:
+                consult_ai_team.run_session(args, "test")
+
+            self.assertIn("Patch mode is disabled", str(raised.exception))
+
+    def test_session_without_mode_does_not_infer_patch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session_dir = Path(tmpdir) / "old"
+            session_dir.mkdir()
+            consult_ai_team.write_json(session_dir / "session.json", {
+                "schema_version": consult_ai_team.SCHEMA_VERSION,
+                "session_id": "old",
+                "status": "waiting_for_user",
+                "turn_count": 0,
+            })
+            args = self.parse_with([
+                "--session",
+                "old",
+                "--session-dir",
+                tmpdir,
+                "--tool",
+                "claude",
+                "--dry-run",
+                "--prompt",
+                "test",
+            ])
+
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_session(args, "test")
+
+            manifest = json.loads((session_dir / "turns" / "001" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["mode"], "explore")
+
     def test_session_command_construction_uses_native_sessions(self) -> None:
         args = self.parse_with(["--session", "--tool", "all", "--prompt", "test"])
         session = {
@@ -726,6 +981,113 @@ class SessionTests(unittest.TestCase):
             session_dir = next(Path(tmpdir).iterdir())
             session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
             self.assertEqual(session["tool_session_ids"]["qwen"], "ses_qwen")
+
+    def test_session_writes_turn_summary_and_injects_previous_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = self.parse_with([
+                "--session",
+                "--session-dir",
+                tmpdir,
+                "--tool",
+                "claude",
+                "--dry-run",
+                "--prompt",
+                "first",
+            ])
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_session(args, "first")
+
+            session_dir = next(Path(tmpdir).iterdir())
+            session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+            self.assertTrue((session_dir / "turns" / "001" / "turn_summary.json").exists())
+
+            args = self.parse_with([
+                "--session",
+                session["session_id"],
+                "--session-dir",
+                tmpdir,
+                "--tool",
+                "claude",
+                "--dry-run",
+                "--prompt",
+                "second",
+            ])
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_session(args, "second")
+
+            prompt = (session_dir / "turns" / "002" / "prompt.txt").read_text(encoding="utf-8")
+            self.assertIn("Previous Panda turn summary", prompt)
+            self.assertIn('"turn": 1', prompt)
+
+    def test_no_session_memory_flag_prevents_prompt_injection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = self.parse_with([
+                "--session",
+                "--session-dir",
+                tmpdir,
+                "--tool",
+                "claude",
+                "--dry-run",
+                "--prompt",
+                "first",
+            ])
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_session(args, "first")
+
+            session_dir = next(Path(tmpdir).iterdir())
+            session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+            args = self.parse_with([
+                "--session",
+                session["session_id"],
+                "--session-dir",
+                tmpdir,
+                "--tool",
+                "claude",
+                "--no-session-memory",
+                "--dry-run",
+                "--prompt",
+                "second",
+            ])
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_session(args, "second")
+
+            prompt = (session_dir / "turns" / "002" / "prompt.txt").read_text(encoding="utf-8")
+            self.assertNotIn("Previous Panda turn summary", prompt)
+
+    def test_no_session_memory_env_prevents_prompt_injection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = self.parse_with([
+                "--session",
+                "--session-dir",
+                tmpdir,
+                "--tool",
+                "claude",
+                "--dry-run",
+                "--prompt",
+                "first",
+            ])
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_session(args, "first")
+
+            session_dir = next(Path(tmpdir).iterdir())
+            session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+            args = self.parse_with([
+                "--session",
+                session["session_id"],
+                "--session-dir",
+                tmpdir,
+                "--tool",
+                "claude",
+                "--dry-run",
+                "--prompt",
+                "second",
+            ])
+            with patch.dict(os.environ, {"PANDA_NO_SESSION_MEMORY": "1"}):
+                with redirect_stdout(io.StringIO()):
+                    consult_ai_team.run_session(args, "second")
+
+            prompt = (session_dir / "turns" / "002" / "prompt.txt").read_text(encoding="utf-8")
+            self.assertNotIn("Previous Panda turn summary", prompt)
 
     def test_session_tools_straggler_timeout_returns_partial_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

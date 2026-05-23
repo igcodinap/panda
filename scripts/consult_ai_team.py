@@ -37,6 +37,19 @@ EXECUTION_CHOICES = ("auto", "parallel", "sequential")
 APPROVAL_MODE_CHOICES = ("unsupervised", "supervised")
 CLAUDE_EFFORT_CHOICES = ("low", "medium", "high", "xhigh", "max")
 TOOL_CHOICES = ("claude", "opencode", "qwen", "all")
+PATCH_MODE = "patch"
+PATCH_MODE_DISABLED_MESSAGE = (
+    "Patch mode is disabled; use --mode advisory or --mode explore. Codex is the only editor."
+)
+SUMMARY_MAX_CHARS = 8000
+EVIDENCE_MAX_CHARS = 50000
+SESSION_MEMORY_MAX_CHARS = 2000
+NULL_USAGE = {
+    "input_tokens": None,
+    "output_tokens": None,
+    "cache_read_tokens": None,
+    "cost_usd": None,
+}
 MODEL_PROFILES = {
     "fast": {
         "claude_model": "sonnet",
@@ -101,13 +114,6 @@ MODE_GUIDANCE = {
 - Do not ask for credentials or secrets.
 - Be concise and concrete.
 - Call out assumptions and uncertainty.""",
-    "patch": """Rules:
-- You may make candidate changes only for the requested task.
-- Report every changed file, summarize the diff, list commands/tests run, and call out risks.
-- Do not commit, push, publish, deploy, delete data, or alter production systems.
-- Do not ask for credentials or secrets.
-- Be concise and concrete.
-- Call out assumptions and uncertainty.""",
 }
 
 
@@ -120,12 +126,12 @@ def parse_args() -> argparse.Namespace:
         default="all",
         help="Collaborator core to run. 'all' runs Claude+GLM+Qwen.",
     )
-    parser.add_argument("--mode", choices=sorted(MODE_GUIDANCE), default="explore")
+    parser.add_argument("--mode", default="explore", metavar="{advisory,explore}")
     parser.add_argument(
         "--execution",
         choices=EXECUTION_CHOICES,
         default=os.environ.get("AI_TEAM_EXECUTION", "auto"),
-        help="Run multiple tools in parallel, sequentially, or auto mode. Auto parallelizes advisory/explore and serializes patch.",
+        help="Run multiple tools in parallel, sequentially, or auto mode. Auto parallelizes advisory/explore.",
     )
     parser.add_argument(
         "--approval-mode",
@@ -148,7 +154,7 @@ def parse_args() -> argparse.Namespace:
         help="Enable session mode. Omit the value to create a new session, or provide a session ID to continue.",
     )
     parser.add_argument("--session-dir", type=Path, help="Directory for persistent AI team sessions.")
-    parser.add_argument("--workspace", type=Path, default=Path.cwd(), help="Workspace to run explore/patch consultations in.")
+    parser.add_argument("--workspace", type=Path, default=Path.cwd(), help="Workspace to run explore consultations in.")
     parser.add_argument("--output-dir", type=Path, help="Directory for responses and manifest.")
     parser.add_argument("--timeout", type=int, default=600, help="Timeout per tool in seconds.")
     parser.add_argument(
@@ -173,12 +179,18 @@ def parse_args() -> argparse.Namespace:
         "--qwen-model",
         help=f"OpenCode Qwen model in provider/model format. Defaults through profile to {DEFAULT_QWEN_MODEL}.",
     )
+    parser.add_argument(
+        "--no-session-memory",
+        action="store_true",
+        help="Session mode: do not inject the previous turn's compact summary into the next prompt.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print commands without running tools.")
     args = parser.parse_args()
     validate_choice(parser, "AI_TEAM_EXECUTION/--execution", args.execution, EXECUTION_CHOICES)
     validate_choice(parser, "AI_TEAM_APPROVAL_MODE/--approval-mode", args.approval_mode, APPROVAL_MODE_CHOICES)
-    if args.mode == "patch" and args.execution == "parallel":
-        parser.error("--execution parallel is not allowed with --mode patch; patch consultations run sequentially.")
+    if args.mode == PATCH_MODE:
+        parser.error(PATCH_MODE_DISABLED_MESSAGE)
+    validate_choice(parser, "--mode", args.mode, MODE_GUIDANCE)
     if args.straggler_timeout < 1:
         parser.error("--straggler-timeout must be at least 1 second.")
     if args.timeout < 1:
@@ -323,6 +335,9 @@ def read_prompt(args: argparse.Namespace) -> str:
 
 
 def consultation_prompt(mode: str, role: str, approval_mode: str, user_prompt: str) -> str:
+    reject_disabled_mode(mode)
+    if mode not in MODE_GUIDANCE:
+        raise SystemExit(f"--mode must be one of: {', '.join(sorted(MODE_GUIDANCE))}")
     return f"""You are advising Codex as an independent collaborator.
 
 Mode: {mode}
@@ -399,6 +414,254 @@ def write_json(path: Path, data: dict) -> None:
 
 def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def mode_is_disabled(mode: object) -> bool:
+    return mode == PATCH_MODE
+
+
+def reject_disabled_mode(mode: object) -> None:
+    if mode_is_disabled(mode):
+        raise SystemExit(PATCH_MODE_DISABLED_MESSAGE)
+
+
+def null_usage() -> dict:
+    return dict(NULL_USAGE)
+
+
+def parse_iso_datetime(value: object) -> Optional[dt.datetime]:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = dt.datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed
+
+
+def latency_seconds(result: dict) -> Optional[float]:
+    started = parse_iso_datetime(result.get("started_at"))
+    finished = parse_iso_datetime(result.get("finished_at"))
+    if started is None or finished is None:
+        return None
+    return max(0.0, round((finished - started).total_seconds(), 3))
+
+
+def normalize_result_metadata(result: dict) -> None:
+    result.setdefault("usage", null_usage())
+    result["latency_seconds"] = latency_seconds(result)
+
+
+def result_status(result: dict) -> str:
+    if result.get("timed_out"):
+        return "timeout"
+    if result.get("returncode") == 0:
+        return "success"
+    if str(result.get("stdout") or "").strip():
+        return "partial"
+    return "failure"
+
+
+SECTION_KEYS = {
+    "recommendation": "recommendation",
+    "alternative worth considering": "alternative",
+    "alternative": "alternative",
+    "risks or edge cases": "risks",
+    "risks": "risks",
+    "verification plan": "verification_plan",
+    "confidence": "confidence",
+}
+SECTION_HEADING_RE = re.compile(
+    r"^\s*(?:#{1,6}\s*)?(?:\*\*)?"
+    r"(Recommendation|Alternative worth considering|Alternative|Risks or edge cases|Risks|Verification plan|Confidence)"
+    r"(?:\*\*)?\s*:?\s*$",
+    re.IGNORECASE,
+)
+
+
+def extract_summary_fields(text: str) -> dict:
+    fields = {
+        "recommendation": None,
+        "alternative": None,
+        "risks": None,
+        "verification_plan": None,
+        "confidence": None,
+    }
+    current_key: Optional[str] = None
+    buffers: dict[str, list[str]] = {}
+    for line in text.splitlines():
+        match = SECTION_HEADING_RE.match(line)
+        if match:
+            heading = match.group(1).strip().lower()
+            current_key = SECTION_KEYS.get(heading)
+            if current_key:
+                buffers.setdefault(current_key, [])
+            continue
+        if current_key:
+            buffers[current_key].append(line)
+
+    for key, lines in buffers.items():
+        value = "\n".join(lines).strip()
+        fields[key] = value or None
+    return fields
+
+
+def truncate_text(value: object, limit: int) -> tuple[object, bool]:
+    if not isinstance(value, str) or len(value) <= limit:
+        return value, False
+    if limit <= 20:
+        return value[:limit], True
+    return value[: limit - 18].rstrip() + "\n[truncated]", True
+
+
+def artifact_json_text(data: dict) -> str:
+    return json.dumps(data, indent=2) + "\n"
+
+
+def enforce_artifact_limit(data: dict, max_chars: int) -> dict:
+    if len(artifact_json_text(data)) <= max_chars:
+        return data
+
+    limited = json.loads(json.dumps(data))
+    findings = limited.get("findings")
+    target_findings = findings if isinstance(findings, list) else [limited]
+    for finding in target_findings:
+        if not isinstance(finding, dict):
+            continue
+        finding["truncated"] = True
+        for field in ("recommendation", "alternative", "risks", "verification_plan"):
+            value, _ = truncate_text(finding.get(field), 1000)
+            finding[field] = value
+
+    if len(artifact_json_text(limited)) <= max_chars:
+        return limited
+
+    for finding in target_findings:
+        if not isinstance(finding, dict):
+            continue
+        for field in ("recommendation", "alternative", "risks", "verification_plan"):
+            value, _ = truncate_text(finding.get(field), 200)
+            finding[field] = value
+
+    if len(artifact_json_text(limited)) <= max_chars:
+        return limited
+
+    for finding in target_findings:
+        if not isinstance(finding, dict):
+            continue
+        for field in ("recommendation", "alternative", "risks", "verification_plan"):
+            finding[field] = None
+        finding["truncated"] = True
+        for field in ("raw_output_path", "stderr_path"):
+            value, _ = truncate_text(finding.get(field), 240)
+            finding[field] = value
+
+    if len(artifact_json_text(limited)) <= max_chars:
+        return limited
+
+    if isinstance(findings, list):
+        limited["findings"] = [
+            {
+                "tool": finding.get("tool"),
+                "status": finding.get("status"),
+                "truncated": True,
+            }
+            for finding in findings
+            if isinstance(finding, dict)
+        ]
+        limited["truncated"] = True
+        if len(artifact_json_text(limited)) <= max_chars:
+            return limited
+
+    if "findings" in limited:
+        omitted_count = len(findings) if isinstance(findings, list) else 1
+        limited["findings"] = []
+        limited["omitted_findings_count"] = omitted_count
+        limited["truncated"] = True
+        if len(artifact_json_text(limited)) <= max_chars:
+            return limited
+
+    for key, value in list(limited.items()):
+        if isinstance(value, str):
+            limited[key], _ = truncate_text(value, 120)
+    return limited
+
+
+def write_limited_json(path: Path, data: dict, max_chars: int) -> dict:
+    limited = enforce_artifact_limit(data, max_chars)
+    write_json(path, limited)
+    return limited
+
+
+def result_raw_output_path(output_dir: Path, tool: str) -> str:
+    return str(output_dir / f"{tool}.txt")
+
+
+def make_finding(tool: str, result: dict, output_dir: Path) -> dict:
+    raw_output_path = result_raw_output_path(output_dir, tool)
+    fields = extract_summary_fields(str(result.get("stdout") or ""))
+    finding = {
+        "tool": tool,
+        "status": result_status(result),
+        "returncode": result.get("returncode"),
+        "timed_out": bool(result.get("timed_out")),
+        "latency_seconds": result.get("latency_seconds"),
+        "recommendation": fields["recommendation"],
+        "alternative": fields["alternative"],
+        "risks": fields["risks"],
+        "verification_plan": fields["verification_plan"],
+        "confidence": fields["confidence"],
+        "usage": result.get("usage") or null_usage(),
+        "raw_output_path": raw_output_path,
+        "stderr_path": result.get("stderr_path"),
+        "truncated": False,
+    }
+    return enforce_artifact_limit(finding, SUMMARY_MAX_CHARS)
+
+
+def write_run_artifacts(output_dir: Path, raw_results: dict[str, dict], tool_order: Iterable[str]) -> dict:
+    findings = []
+    summary_paths = {}
+    for tool in tool_order:
+        finding = make_finding(tool, raw_results[tool], output_dir)
+        summary_path = output_dir / f"{tool}.summary.json"
+        finding = write_limited_json(summary_path, finding, SUMMARY_MAX_CHARS)
+        findings.append(finding)
+        summary_paths[tool] = str(summary_path)
+
+    evidence = {
+        "schema_version": SCHEMA_VERSION,
+        "findings": findings,
+    }
+    evidence_path = output_dir / "evidence.json"
+    evidence = write_limited_json(evidence_path, evidence, EVIDENCE_MAX_CHARS)
+    return {
+        "evidence": evidence,
+        "evidence_path": str(evidence_path),
+        "summary_paths": summary_paths,
+    }
+
+
+def build_telemetry(raw_results: dict[str, dict], artifact_paths: dict) -> dict:
+    latencies = [
+        result.get("latency_seconds")
+        for result in raw_results.values()
+        if isinstance(result.get("latency_seconds"), (int, float))
+    ]
+    latency = {
+        "min": min(latencies) if latencies else None,
+        "max": max(latencies) if latencies else None,
+        "total": round(sum(latencies), 3) if latencies else None,
+    }
+    return {
+        "tool_count": len(raw_results),
+        "failed_tool_count": sum(1 for result in raw_results.values() if result_status(result) == "failure"),
+        "timed_out_tool_count": sum(1 for result in raw_results.values() if result.get("timed_out")),
+        "latency": latency,
+        "artifact_paths": artifact_paths,
+    }
 
 
 def make_session(args: argparse.Namespace, workspace: Path) -> tuple[dict, Path, bool]:
@@ -488,9 +751,68 @@ def next_turn_dir(session_path: Path, turn_number: int) -> Path:
     return session_path / "turns" / f"{turn_number:03d}"
 
 
-def parse_opencode_jsonl(raw: str) -> tuple[Optional[str], str]:
+def find_numeric_value(data: object, keys: Iterable[str]) -> Optional[float]:
+    key_set = set(keys)
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if key in key_set and isinstance(value, (int, float)):
+                return float(value)
+            found = find_numeric_value(value, key_set)
+            if found is not None:
+                return found
+    elif isinstance(data, list):
+        for item in data:
+            found = find_numeric_value(item, key_set)
+            if found is not None:
+                return found
+    return None
+
+
+def parse_usage_event(event: dict) -> dict:
+    usage = null_usage()
+    usage_sources = []
+    for key in ("usage", "tokens", "tokenUsage"):
+        source = event.get(key)
+        if isinstance(source, dict):
+            usage_sources.append(source)
+    usage_sources.append(event)
+    key_groups = {
+        "input_tokens": ("input_tokens", "inputTokens", "prompt_tokens", "promptTokens"),
+        "output_tokens": ("output_tokens", "outputTokens", "completion_tokens", "completionTokens"),
+        "cache_read_tokens": (
+            "cache_read_tokens",
+            "cacheReadTokens",
+            "cached_tokens",
+            "cachedTokens",
+            "cache_read",
+            "cacheRead",
+        ),
+        "cost_usd": ("cost_usd", "costUSD", "cost", "total_cost", "totalCost"),
+    }
+    for target, keys in key_groups.items():
+        value = None
+        for source in usage_sources:
+            value = find_numeric_value(source, keys)
+            if value is not None:
+                break
+        if value is None:
+            continue
+        usage[target] = value if target == "cost_usd" else int(value)
+    return usage
+
+
+def merge_usage(base: dict, update: dict) -> dict:
+    merged = dict(base)
+    for key in NULL_USAGE:
+        if update.get(key) is not None:
+            merged[key] = update[key]
+    return merged
+
+
+def parse_opencode_jsonl(raw: str) -> tuple[Optional[str], str, dict]:
     session_id = None
     text_parts: list[str] = []
+    usage = null_usage()
     for line in raw.splitlines():
         line = line.strip()
         if not line:
@@ -501,10 +823,11 @@ def parse_opencode_jsonl(raw: str) -> tuple[Optional[str], str]:
             continue
         if not session_id and isinstance(event.get("sessionID"), str):
             session_id = event["sessionID"]
+        usage = merge_usage(usage, parse_usage_event(event))
         part = event.get("part")
         if event.get("type") == "text" and isinstance(part, dict) and isinstance(part.get("text"), str):
             text_parts.append(part["text"])
-    return session_id, "".join(text_parts).strip()
+    return session_id, "".join(text_parts).strip(), usage
 
 
 def run_tool(name: str, command: list[str], cwd: Path, timeout: int, dry_run: bool) -> dict:
@@ -524,6 +847,7 @@ def run_tool(name: str, command: list[str], cwd: Path, timeout: int, dry_run: bo
         result["stdout"] = quote_cmd(command)
         result["returncode"] = 0
         result["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+        normalize_result_metadata(result)
         return result
     try:
         completed = subprocess.run(
@@ -540,22 +864,25 @@ def run_tool(name: str, command: list[str], cwd: Path, timeout: int, dry_run: bo
         result["stdout"] = exc.stdout or ""
         result["stderr"] = exc.stderr or f"Timed out after {timeout} seconds."
         result["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+        normalize_result_metadata(result)
         return result
     except OSError as exc:
         result["returncode"] = -1
         result["stderr"] = f"Failed to launch {name}: {exc}"
         result["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+        normalize_result_metadata(result)
         return result
     result["returncode"] = completed.returncode
     result["stdout"] = completed.stdout
     result["stderr"] = completed.stderr
     result["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+    normalize_result_metadata(result)
     return result
 
 
 def failed_tool_result(name: str, command: list[str], cwd: Path, exc: Exception) -> dict:
     now = dt.datetime.now(dt.timezone.utc).isoformat()
-    return {
+    result = {
         "tool": name,
         "command": command,
         "cwd": str(cwd),
@@ -566,6 +893,8 @@ def failed_tool_result(name: str, command: list[str], cwd: Path, exc: Exception)
         "stderr": f"Unhandled runner error for {name}: {type(exc).__name__}: {exc}",
         "finished_at": now,
     }
+    normalize_result_metadata(result)
+    return result
 
 
 def write_response(output_dir: Path, result: dict) -> None:
@@ -584,13 +913,13 @@ def write_response(output_dir: Path, result: dict) -> None:
 def should_run_parallel(execution: str, mode: str, tool_count: int) -> bool:
     if tool_count < 2:
         return False
-    if mode == "patch":
+    if mode not in {"advisory", "explore"}:
         return False
     if execution == "parallel":
         return True
     if execution == "sequential":
         return False
-    return mode in {"advisory", "explore"}
+    return True
 
 
 def requested_tools(tool: str) -> list[str]:
@@ -719,11 +1048,20 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
             except Exception as exc:
                 raw_results[name] = failed_tool_result(name, command, run_cwd, exc)
 
+    for result in raw_results.values():
+        normalize_result_metadata(result)
+
     results = []
     for name in commands:
         result = raw_results[name]
         results.append({key: value for key, value in result.items() if key not in {"stdout", "stderr"}})
         write_response(output_dir, result)
+
+    artifact_info = write_run_artifacts(output_dir, raw_results, commands)
+    artifact_paths = {
+        "evidence": artifact_info["evidence_path"],
+        "summaries": artifact_info["summary_paths"],
+    }
 
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -739,6 +1077,7 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
         "run_cwd": str(run_cwd),
         "requested_tools": requested_tools(args.tool),
         "tools": results,
+        "telemetry": build_telemetry(raw_results, artifact_paths),
     }
     manifest.update(profile_manifest_metadata(args))
     write_json(output_dir / "manifest.json", manifest)
@@ -801,9 +1140,10 @@ def finalize_session_result(result: dict, json_tools: set[str]) -> None:
         if raw_path.exists():
             raw_path.replace(raw_jsonl_path)
             result["raw_stdout_path"] = str(raw_jsonl_path)
-        session_id, text = parse_opencode_jsonl(raw_stdout)
+        session_id, text, usage = parse_opencode_jsonl(raw_stdout)
         if session_id:
             result["tool_session_id"] = session_id
+        result["usage"] = usage
         result["stdout"] = text or raw_stdout
         return
     result["stdout"] = raw_stdout
@@ -857,6 +1197,7 @@ def run_session_tools(
                 "stderr": f"Failed to launch {name}: {exc}",
                 "finished_at": now_iso(),
             })
+            normalize_result_metadata(results[name])
             stdout_file.close()
             stderr_file.close()
             continue
@@ -913,6 +1254,7 @@ def run_session_tools(
 
     for result in results.values():
         finalize_session_result(result, json_tools)
+        normalize_result_metadata(result)
     return results
 
 
@@ -932,12 +1274,95 @@ def turn_status(results: Iterable[dict]) -> str:
     return "ok"
 
 
+def env_flag_enabled(name: str) -> bool:
+    value = os.environ.get(name)
+    return isinstance(value, str) and value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def session_memory_disabled(args: argparse.Namespace) -> bool:
+    return bool(getattr(args, "no_session_memory", False)) or env_flag_enabled("PANDA_NO_SESSION_MEMORY")
+
+
+def compact_json_context(data: dict, max_chars: int) -> str:
+    text = json.dumps(data, indent=2)
+    value, _ = truncate_text(text, max_chars)
+    return str(value)
+
+
+def load_previous_turn_context(session: dict, session_path: Path) -> Optional[str]:
+    session_id = session.get("session_id")
+    previous_turn = int(session.get("turn_count", 0))
+    if previous_turn < 1:
+        return None
+    summary_path = next_turn_dir(session_path, previous_turn) / "turn_summary.json"
+    try:
+        summary = read_json(summary_path)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if summary.get("schema_version") != SCHEMA_VERSION:
+        return None
+    if summary.get("session_id") != session_id:
+        return None
+    if summary.get("turn") != previous_turn:
+        return None
+    return compact_json_context(summary, SESSION_MEMORY_MAX_CHARS)
+
+
+def add_session_memory_to_prompt(user_prompt: str, context: Optional[str]) -> str:
+    if not context:
+        return user_prompt
+    return (
+        f"{user_prompt}\n\n"
+        f"Previous Panda turn summary (capped at {SESSION_MEMORY_MAX_CHARS} characters):\n"
+        f"{context}"
+    )
+
+
+def make_turn_summary(
+    session_id: str,
+    turn_number: int,
+    current_turn_status: str,
+    stopping_suggestion: Optional[str],
+    evidence: dict,
+) -> dict:
+    compact_findings = []
+    for finding in evidence.get("findings", []):
+        if not isinstance(finding, dict):
+            continue
+        compact_findings.append({
+            "tool": finding.get("tool"),
+            "status": finding.get("status"),
+            "recommendation": finding.get("recommendation"),
+            "risks": finding.get("risks"),
+            "verification_plan": finding.get("verification_plan"),
+            "raw_output_path": finding.get("raw_output_path"),
+            "truncated": finding.get("truncated", False),
+        })
+    summary = {
+        "schema_version": SCHEMA_VERSION,
+        "session_id": session_id,
+        "turn": turn_number,
+        "created_at": now_iso(),
+        "turn_status": current_turn_status,
+        "stopping_suggestion": stopping_suggestion,
+        "findings": compact_findings,
+    }
+    return enforce_artifact_limit(summary, SESSION_MEMORY_MAX_CHARS)
+
+
 def run_session(args: argparse.Namespace, user_prompt: str) -> int:
     workspace = args.workspace.resolve()
     session, session_path, created = make_session(args, workspace)
+    if not created and mode_is_disabled(session.get("mode")):
+        raise SystemExit(PATCH_MODE_DISABLED_MESSAGE)
     if not created:
         inherit_session_args(args, session)
-    prompt = consultation_prompt(args.mode, args.role, args.approval_mode, user_prompt)
+    reject_disabled_mode(args.mode)
+    previous_context = None
+    if not created and not session_memory_disabled(args):
+        previous_context = load_previous_turn_context(session, session_path)
+    prompt_user_context = add_session_memory_to_prompt(user_prompt, previous_context)
+    prompt = consultation_prompt(args.mode, args.role, args.approval_mode, prompt_user_context)
     session_path.mkdir(parents=True, exist_ok=True)
     turn_number = int(session.get("turn_count", 0)) + 1
     turn_dir = next_turn_dir(session_path, turn_number)
@@ -1004,14 +1429,31 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
         if name in raw_results and raw_results[name].get("tool_session_id"):
             session.setdefault("tool_session_ids", {})[name] = raw_results[name]["tool_session_id"]
 
+    for result in raw_results.values():
+        normalize_result_metadata(result)
+
     results = []
     for name in commands:
         result = raw_results[name]
         results.append({key: value for key, value in result.items() if key not in {"stdout", "stderr"}})
         write_response(turn_dir, result)
 
+    artifact_info = write_run_artifacts(turn_dir, raw_results, commands)
+    artifact_paths = {
+        "evidence": artifact_info["evidence_path"],
+        "summaries": artifact_info["summary_paths"],
+    }
+
     stopping_suggestion = latest_stopping_suggestion(raw_results.values())
     current_turn_status = turn_status(raw_results.values())
+    turn_summary = make_turn_summary(
+        session["session_id"],
+        turn_number,
+        current_turn_status,
+        stopping_suggestion,
+        artifact_info["evidence"],
+    )
+    write_limited_json(turn_dir / "turn_summary.json", turn_summary, SESSION_MEMORY_MAX_CHARS)
     session.update({
         "updated_at": now_iso(),
         "status": "waiting_for_user",
@@ -1043,6 +1485,7 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
         "turn_status": current_turn_status,
         "stopping_suggestion": stopping_suggestion,
         "tools": results,
+        "telemetry": build_telemetry(raw_results, artifact_paths),
     }
     manifest.update(profile_metadata)
     write_json(turn_dir / "manifest.json", manifest)

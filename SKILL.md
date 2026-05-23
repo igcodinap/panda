@@ -18,14 +18,15 @@ Default to explore mode with unsupervised collaborator approvals for substantial
 3. Ask focused questions. Prefer prompts that request tradeoffs, risks, tests, and a recommendation.
 4. Run `scripts/consult_ai_team.py` from this skill when external consultation is useful.
 5. Compare the responses. Name agreement, disagreement, missing assumptions, and which advice you accept.
-6. Implement locally in Codex by default. Let external tools make changes only in patch mode or when the user explicitly asks for that workflow.
+6. Implement locally in Codex. Panda collaborators advise, inspect, and review; Codex remains the only workspace editor.
 7. Verify with the repo's normal tests, linters, build, or manual checks.
 
 ## Collaboration Modes
 
 - `advisory`: Ask for ideas or critique without shell exploration.
 - `explore`: Allow shell exploration such as `rg`, `ls`, `git status`, tests, builds, logs, dependency inspection, and web or repo research when appropriate. Ask collaborators to avoid source edits and report any files they changed accidentally.
-- `patch`: Allow a collaborator to make candidate changes. Use only when the user wants this. Require a changed-file list, diff summary, commands run, tests run, and known risks. Codex reviews and decides what to keep.
+
+Patch mode is disabled. If candidate code is useful, ask collaborators for proposed changes in prose or diff snippets and have Codex apply any accepted edits.
 
 ## Consultation Runner
 
@@ -45,14 +46,15 @@ The runner:
 - Defaults to `--tool all`, which runs Claude Code, OpenCode GLM 5.1, and OpenCode Qwen 3.6 Plus. Use `--tool claude`, `--tool opencode`, or `--tool qwen` for one core.
 - Defaults to one-shot consultations. Use session mode only when the user asks for a conversation, persistent session, or to continue a Panda thread.
 - Defaults to `--approval-mode unsupervised`, so Claude Code and OpenCode auto-approve their own local tool prompts instead of blocking Codex.
-- Defaults to `--execution auto`, which runs multiple collaborators in parallel for `advisory` and `explore` mode, while keeping `patch` mode sequential as a conservative guardrail. `patch` mode rejects explicit parallel execution.
+- Defaults to `--execution auto`, which runs multiple collaborators in parallel for `advisory` and `explore` mode.
 - Runs `advisory` consultations in an isolated temporary directory by default.
-- Runs `explore` and `patch` consultations from the workspace so collaborators can inspect the repo.
+- Runs `explore` consultations from the workspace so collaborators can inspect the repo.
 - Allows shell commands in `explore` mode for inspection, testing, builds, logs, git state, and research.
-- Asks collaborators to avoid source edits outside `patch` mode and to report any changed files.
+- Asks collaborators to avoid source edits and to report any changed files if a command unexpectedly modifies the workspace.
 - Writes each one-shot response plus a manifest under `/tmp/panda-consults/...` unless `--output-dir` is provided.
+- Writes compact JSON artifacts next to the raw outputs: `evidence.json`, `{tool}.summary.json`, and, for sessions, `turn_summary.json`. Read these first; inspect raw `{tool}.txt` logs only when details are needed.
 
-Use `--prompt-file` for longer prompts, `--workspace` to target a repo explicitly, `--approval-mode supervised` to disable collaborator auto-approval, `--execution parallel` or `--execution sequential` to override auto execution, `--profile fast|balanced|deep` to choose cost/depth, and `--dry-run` to inspect commands without calling the tools. Use `--session` to create a persistent Panda session, `--session <id>` to continue it, `--session-dir` to choose where session state lives, and `--straggler-timeout` to bound how long a session turn waits for lagging collaborators after another collaborator has finished. Environment overrides are also supported with `AI_TEAM_EXECUTION`, `AI_TEAM_APPROVAL_MODE`, and `OPENCODE_MODEL`; invalid values are rejected.
+Use `--prompt-file` for longer prompts, `--workspace` to target a repo explicitly, `--approval-mode supervised` to disable collaborator auto-approval, `--execution parallel` or `--execution sequential` to override auto execution, `--profile fast|balanced|deep` to choose cost/depth, and `--dry-run` to inspect commands without calling the tools. Use `--session` to create a persistent Panda session, `--session <id>` to continue it, `--session-dir` to choose where session state lives, and `--straggler-timeout` to bound how long a session turn waits for lagging collaborators after another collaborator has finished. Use `--no-session-memory` or `PANDA_NO_SESSION_MEMORY=1` to skip previous-turn summary injection. Environment overrides are also supported with `AI_TEAM_EXECUTION`, `AI_TEAM_APPROVAL_MODE`, `PANDA_NO_SESSION_MEMORY`, and `OPENCODE_MODEL`; invalid values are rejected.
 
 When Codex runs the runner with OpenCode enabled, execute it outside the filesystem sandbox. OpenCode writes to its own state database under `~/.local/share/opencode`; sandboxed runs can fail with SQLite checkpoint errors such as `PRAGMA wal_checkpoint(PASSIVE)`. Codex may still need one host-level approval to launch the runner outside the sandbox, but Claude Code and OpenCode should not pause for their own internal approvals after launch.
 
@@ -128,6 +130,7 @@ Session mode:
 - Writes each turn under `turns/001`, `turns/002`, and so on.
 - Uses native Claude Code and separate OpenCode sessions for GLM and Qwen where available.
 - Uses a stable per-session isolated directory for `advisory` turns so native session resume works across turns.
+- Writes `turn_summary.json` after each turn and injects the previous valid turn summary into the next prompt, capped to a compact budget. Disable this with `--no-session-memory` or `PANDA_NO_SESSION_MEMORY=1`.
 - Treats each invocation as exactly one visible turn. Codex must summarize the turn to the user and wait for user input before continuing.
 - Does not classify silence as stuck. It records hard timeouts, straggler timeouts, and tool failures as degraded turns, then returns partial results for Codex and the user to decide the next move.
 
@@ -163,16 +166,17 @@ For deeper prompt patterns, read `references/prompt-patterns.md`.
 ## Guardrails
 
 - Do not paste secrets, private credentials, tokens, customer data, or unnecessary proprietary context into external tools.
-- Do not ask external tools to make edits in the user's workspace by default; use `patch` mode only with user intent.
+- Do not ask external tools to make edits in the user's workspace. Codex is the only editor.
 - Allow shell commands for exploration when useful. Avoid commands that intentionally mutate source files, rewrite history, publish, deploy, delete data, or alter production systems.
 - Parallel `explore` mode can still create normal tool/build/test cache files in the shared workspace. Treat that as acceptable workspace noise for review and research, and use `--execution sequential` when a repo's commands are known to conflict.
 - Run OpenCode consultations outside Codex's filesystem sandbox when needed so OpenCode can update its own app state.
-- If a collaborator changes files, require a changed-file list and diff summary before Codex considers the work.
+- If a collaborator unexpectedly changes files, require a changed-file list and diff summary before Codex considers the work.
 - Use collaborator auto-approval deliberately. The runner uses Claude Code `bypassPermissions` and OpenCode `--dangerously-skip-permissions` in unsupervised mode so the tools can work without blocking on approval prompts.
 - Keep prompts bounded. Summarize large files and include only the snippets needed for the question.
 - If outputs conflict, prefer the evidence from the local codebase and tests over any model opinion.
 - If an external tool fails, continue with the available perspective and mention the failure only when it affects confidence.
 - When available, preserve model and token/cost metadata in the runner manifest or output directory.
+- Prefer `evidence.json` and `{tool}.summary.json` for synthesis. These artifacts are compact and best-effort; raw logs remain the authority for exact details.
 
 ## Model And Usage Metadata
 
@@ -180,7 +184,7 @@ For deeper prompt patterns, read `references/prompt-patterns.md`.
 - OpenCode GLM: profiles use `opencode-go/glm-5.1`. Pass `--opencode-model` to override it. GLM 5.1 should receive only `--model`, not `--variant`.
 - OpenCode Qwen: profiles use `opencode-go/qwen3.6-plus`. Pass `--qwen-model` to override it. Qwen 3.6 Plus should receive only `--model`, not `--variant`.
 - OpenCode usage: use `opencode stats --models`, `opencode run --format json`, or `opencode export <sessionID>` when token/cost/model details need inspection.
-- Runner manifests record `profile`, `profile_source`, `cost_tier`, profile-wide `effective_models`, launch-scoped `active_models`, `requested_tools`, `effective_effort`, `effort_support`, `applied_effort`, and best-effort requested model/effort fields.
+- Runner manifests record `profile`, `profile_source`, `cost_tier`, profile-wide `effective_models`, launch-scoped `active_models`, `requested_tools`, `effective_effort`, `effort_support`, `applied_effort`, telemetry, artifact paths, and best-effort requested model/effort fields.
 - Treat usage metadata as best-effort unless the runner explicitly captures it for that run. When exact accounting matters, verify against the tool's native stats/export output.
 
 ## Adaptive Reporting

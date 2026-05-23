@@ -70,18 +70,6 @@ Diff or key snippets:
 Please review for behavioral bugs, missing tests, edge cases, and maintainability risks. Prioritize findings over style.
 ```
 
-## Candidate Patch
-
-```text
-Goal:
-- ...
-
-Constraints:
-- ...
-
-You may make a candidate patch. Report changed files, summarize the diff, include commands/tests run, and call out risks. Codex will review before accepting anything.
-```
-
 ## Test Planning
 
 ```text
