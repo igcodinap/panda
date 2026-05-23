@@ -12,12 +12,18 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 import time
 from typing import Iterable, Optional
 import uuid
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows fallback.
+    fcntl = None
 
 
 ROLE_GUIDANCE = {
@@ -44,6 +50,8 @@ PATCH_MODE_DISABLED_MESSAGE = (
 SUMMARY_MAX_CHARS = 8000
 EVIDENCE_MAX_CHARS = 50000
 SESSION_MEMORY_MAX_CHARS = 2000
+PROMPT_WARN_CHARS = 50000
+OPENCODE_BACKED_TOOLS = {"opencode", "qwen"}
 NULL_USAGE = {
     "input_tokens": None,
     "output_tokens": None,
@@ -183,6 +191,11 @@ def parse_args() -> argparse.Namespace:
         "--no-session-memory",
         action="store_true",
         help="Session mode: do not inject the previous turn's compact summary into the next prompt.",
+    )
+    parser.add_argument(
+        "--serialize-opencode",
+        action="store_true",
+        help="Run OpenCode-backed tools one at a time as a diagnostic fallback.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print commands without running tools.")
     args = parser.parse_args()
@@ -398,6 +411,29 @@ def process_is_running(pid: object) -> bool:
     return True
 
 
+class SessionLock:
+    def __init__(self, session_path: Path):
+        self.path = session_path / "session.lock"
+        self.file_obj = None
+
+    def __enter__(self) -> "SessionLock":
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.file_obj = self.path.open("a+", encoding="utf-8")
+        if fcntl is not None:
+            fcntl.flock(self.file_obj.fileno(), fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if self.file_obj is None:
+            return
+        try:
+            if fcntl is not None:
+                fcntl.flock(self.file_obj.fileno(), fcntl.LOCK_UN)
+        finally:
+            self.file_obj.close()
+            self.file_obj = None
+
+
 def write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
@@ -414,6 +450,20 @@ def write_json(path: Path, data: dict) -> None:
 
 def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_text_atomic(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    try:
+        with tmp_path.open("w", encoding="utf-8") as file_obj:
+            file_obj.write(text)
+            file_obj.flush()
+            os.fsync(file_obj.fileno())
+        os.replace(tmp_path, path)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
 
 
 def mode_is_disabled(mode: object) -> bool:
@@ -616,6 +666,7 @@ def make_finding(tool: str, result: dict, output_dir: Path) -> dict:
         "usage": result.get("usage") or null_usage(),
         "raw_output_path": raw_output_path,
         "stderr_path": result.get("stderr_path"),
+        "warnings": result.get("warnings") or [],
         "truncated": False,
     }
     return enforce_artifact_limit(finding, SUMMARY_MAX_CHARS)
@@ -644,7 +695,29 @@ def write_run_artifacts(output_dir: Path, raw_results: dict[str, dict], tool_ord
     }
 
 
-def build_telemetry(raw_results: dict[str, dict], artifact_paths: dict) -> dict:
+def prompt_telemetry(prompt: str) -> dict:
+    char_count = len(prompt)
+    return {
+        "characters": char_count,
+        "soft_limit": PROMPT_WARN_CHARS,
+        "warning": char_count > PROMPT_WARN_CHARS,
+    }
+
+
+def collect_result_warnings(raw_results: dict[str, dict]) -> list[dict]:
+    warnings = []
+    for tool, result in raw_results.items():
+        for warning in result.get("warnings") or []:
+            warnings.append({"tool": tool, "code": warning})
+    return warnings
+
+
+def build_telemetry(
+    raw_results: dict[str, dict],
+    artifact_paths: dict,
+    prompt: Optional[str] = None,
+    extra_warnings: Optional[list[dict]] = None,
+) -> dict:
     latencies = [
         result.get("latency_seconds")
         for result in raw_results.values()
@@ -655,41 +728,56 @@ def build_telemetry(raw_results: dict[str, dict], artifact_paths: dict) -> dict:
         "max": max(latencies) if latencies else None,
         "total": round(sum(latencies), 3) if latencies else None,
     }
-    return {
+    warnings = collect_result_warnings(raw_results)
+    if extra_warnings:
+        warnings.extend(extra_warnings)
+    telemetry = {
         "tool_count": len(raw_results),
         "failed_tool_count": sum(1 for result in raw_results.values() if result_status(result) == "failure"),
         "timed_out_tool_count": sum(1 for result in raw_results.values() if result.get("timed_out")),
         "latency": latency,
         "artifact_paths": artifact_paths,
     }
+    if prompt is not None:
+        telemetry["prompt"] = prompt_telemetry(prompt)
+        if telemetry["prompt"]["warning"]:
+            warnings.append({"tool": None, "code": "prompt_soft_limit_exceeded"})
+    telemetry["warnings"] = warnings
+    return telemetry
 
 
-def make_session(args: argparse.Namespace, workspace: Path) -> tuple[dict, Path, bool]:
-    session_root = (args.session_dir or default_session_root()).expanduser()
-    if args.session:
-        session_id = args.session
-        validate_session_id(session_id)
-        session_path = session_root / session_id
-        session_file = session_path / "session.json"
-        if not session_file.exists():
-            raise SystemExit(f"Session not found: {session_id}")
-        session = read_json(session_file)
-        if session.get("schema_version") != SCHEMA_VERSION:
-            raise SystemExit(f"Unsupported session schema: {session.get('schema_version')!r}")
-        if session.get("status") == "running":
-            if process_is_running(session.get("runner_pid")):
-                raise SystemExit(f"Session is already running: {session_id}")
-            session["status"] = "waiting_for_user"
-            session["last_turn_status"] = "degraded"
-            session["latest_stopping_suggestion"] = "tool_timed_out"
-            session["recovered_running_session_at"] = now_iso()
-            session["runner_pid"] = None
-        return session, session_path, False
+def session_root(args: argparse.Namespace) -> Path:
+    return (args.session_dir or default_session_root()).expanduser()
 
-    session_id = str(uuid.uuid4())
-    session_path = session_root / session_id
+
+def recover_running_session(session: dict) -> list[str]:
+    if session.get("status") != "running":
+        return []
+    session_id = session.get("session_id", "<unknown>")
+    if process_is_running(session.get("runner_pid")):
+        raise SystemExit(f"Session is already running: {session_id}")
+    session["status"] = "waiting_for_user"
+    session["last_turn_status"] = "degraded"
+    session["latest_stopping_suggestion"] = "tool_timed_out"
+    session["recovered_running_session_at"] = now_iso()
+    session["runner_pid"] = None
+    return ["recovered_stale_running_session"]
+
+
+def load_existing_session(session_path: Path) -> tuple[dict, list[str]]:
+    session_file = session_path / "session.json"
+    if not session_file.exists():
+        raise SystemExit(f"Session not found: {session_path.name}")
+    session = read_json(session_file)
+    if session.get("schema_version") != SCHEMA_VERSION:
+        raise SystemExit(f"Unsupported session schema: {session.get('schema_version')!r}")
+    recovery_notes = recover_running_session(session)
+    return session, recovery_notes
+
+
+def new_session_state(args: argparse.Namespace, workspace: Path, session_id: str) -> dict:
     profile_metadata = profile_manifest_metadata(args)
-    session = {
+    return {
         "schema_version": SCHEMA_VERSION,
         "session_id": session_id,
         "created_at": now_iso(),
@@ -723,6 +811,22 @@ def make_session(args: argparse.Namespace, workspace: Path) -> tuple[dict, Path,
         "latest_stopping_suggestion": None,
         "runner_pid": None,
     }
+
+
+def make_session(args: argparse.Namespace, workspace: Path) -> tuple[dict, Path, bool]:
+    root = session_root(args)
+    if args.session:
+        session_id = args.session
+        validate_session_id(session_id)
+        session_path = root / session_id
+        session, recovery_notes = load_existing_session(session_path)
+        if recovery_notes:
+            session["_recovery_notes"] = recovery_notes
+        return session, session_path, False
+
+    session_id = str(uuid.uuid4())
+    session_path = root / session_id
+    session = new_session_state(args, workspace, session_id)
     return session, session_path, True
 
 
@@ -749,6 +853,20 @@ def inherit_session_args(args: argparse.Namespace, session: dict) -> None:
 
 def next_turn_dir(session_path: Path, turn_number: int) -> Path:
     return session_path / "turns" / f"{turn_number:03d}"
+
+
+def next_available_turn_dir(
+    session_path: Path,
+    preferred_turn_number: int,
+    recovery_notes: list[str],
+) -> tuple[int, Path]:
+    turn_number = preferred_turn_number
+    while True:
+        turn_dir = next_turn_dir(session_path, turn_number)
+        if not turn_dir.exists():
+            return turn_number, turn_dir
+        recovery_notes.append(f"skipped_existing_turn_dir:{turn_number:03d}")
+        turn_number += 1
 
 
 def find_numeric_value(data: object, keys: Iterable[str]) -> Optional[float]:
@@ -809,10 +927,12 @@ def merge_usage(base: dict, update: dict) -> dict:
     return merged
 
 
-def parse_opencode_jsonl(raw: str) -> tuple[Optional[str], str, dict]:
+def parse_opencode_jsonl(raw: str, include_warnings: bool = False):
     session_id = None
     text_parts: list[str] = []
     usage = null_usage()
+    malformed_lines = 0
+    parsed_events = 0
     for line in raw.splitlines():
         line = line.strip()
         if not line:
@@ -820,17 +940,84 @@ def parse_opencode_jsonl(raw: str) -> tuple[Optional[str], str, dict]:
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
+            malformed_lines += 1
             continue
+        if not isinstance(event, dict):
+            malformed_lines += 1
+            continue
+        parsed_events += 1
         if not session_id and isinstance(event.get("sessionID"), str):
             session_id = event["sessionID"]
         usage = merge_usage(usage, parse_usage_event(event))
         part = event.get("part")
         if event.get("type") == "text" and isinstance(part, dict) and isinstance(part.get("text"), str):
             text_parts.append(part["text"])
-    return session_id, "".join(text_parts).strip(), usage
+    warnings = []
+    if malformed_lines:
+        warnings.append("opencode_jsonl_malformed_lines_skipped")
+    if raw.strip() and parsed_events == 0:
+        warnings.append("opencode_jsonl_no_parseable_events")
+    if not session_id:
+        warnings.append("opencode_session_id_missing")
+    if all(usage.get(key) is None for key in NULL_USAGE):
+        warnings.append("opencode_usage_missing")
+    parsed = (session_id, "".join(text_parts).strip(), usage)
+    if include_warnings:
+        return (*parsed, warnings)
+    return parsed
 
 
-def run_tool(name: str, command: list[str], cwd: Path, timeout: int, dry_run: bool) -> dict:
+def popen_process(
+    command: list[str],
+    cwd: Path,
+    stdout_file,
+    stderr_file,
+) -> subprocess.Popen:
+    return subprocess.Popen(
+        command,
+        cwd=str(cwd),
+        stdout=stdout_file,
+        stderr=stderr_file,
+        text=True,
+        start_new_session=(os.name == "posix"),
+    )
+
+
+def terminate_process(process: subprocess.Popen, grace_seconds: float = 5.0) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+        except OSError:
+            process.terminate()
+    else:
+        process.terminate()
+    try:
+        process.wait(timeout=grace_seconds)
+    except subprocess.TimeoutExpired:
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            except OSError:
+                process.kill()
+        else:
+            process.kill()
+        process.wait(timeout=grace_seconds)
+
+
+def run_tool(
+    name: str,
+    command: list[str],
+    cwd: Path,
+    timeout: int,
+    dry_run: bool,
+    output_dir: Optional[Path] = None,
+) -> dict:
     started = dt.datetime.now(dt.timezone.utc).isoformat()
     result = {
         "tool": name,
@@ -849,33 +1036,61 @@ def run_tool(name: str, command: list[str], cwd: Path, timeout: int, dry_run: bo
         result["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
         normalize_result_metadata(result)
         return result
+    temp_dir = None
+    if output_dir is None:
+        temp_dir = tempfile.TemporaryDirectory()
+        artifact_dir = Path(temp_dir.name)
+    else:
+        artifact_dir = output_dir
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+    stdout_path = artifact_dir / f"{name}.stdout"
+    stderr_path = artifact_dir / f"{name}.stderr"
+    result["stdout_path"] = str(stdout_path)
+    result["stderr_path"] = str(stderr_path)
+    process = None
+    stdout_file = None
+    stderr_file = None
     try:
-        completed = subprocess.run(
-            command,
-            cwd=str(cwd),
-            text=True,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        result["timed_out"] = True
-        result["returncode"] = -1
-        result["stdout"] = exc.stdout or ""
-        result["stderr"] = exc.stderr or f"Timed out after {timeout} seconds."
+        stdout_file = stdout_path.open("w", encoding="utf-8")
+        stderr_file = stderr_path.open("w", encoding="utf-8")
+        process = popen_process(command, cwd, stdout_file, stderr_file)
+        try:
+            result["returncode"] = process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            terminate_process(process)
+            result["timed_out"] = True
+            result["returncode"] = process.returncode if process.returncode is not None else -1
         result["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
-        normalize_result_metadata(result)
-        return result
     except OSError as exc:
+        if stderr_file is not None:
+            stderr_file.write(f"Failed to launch {name}: {exc}\n")
+            stderr_file.flush()
         result["returncode"] = -1
         result["stderr"] = f"Failed to launch {name}: {exc}"
         result["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
-        normalize_result_metadata(result)
-        return result
-    result["returncode"] = completed.returncode
-    result["stdout"] = completed.stdout
-    result["stderr"] = completed.stderr
-    result["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+    except Exception:
+        if process is not None:
+            terminate_process(process)
+        raise
+    finally:
+        if stdout_file is not None and not stdout_file.closed:
+            stdout_file.close()
+        if stderr_file is not None and not stderr_file.closed:
+            stderr_file.close()
+    if not result["finished_at"]:
+        result["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+    result["stdout"] = read_text_if_exists(stdout_path)
+    stderr_text = read_text_if_exists(stderr_path)
+    if result["stderr"]:
+        result["stderr"] = f"{result['stderr']}\n{stderr_text}".strip()
+    else:
+        result["stderr"] = stderr_text
+    if result["timed_out"] and not result["stderr"].strip():
+        result["stderr"] = f"Timed out after {timeout} seconds."
+    if temp_dir is not None:
+        temp_dir.cleanup()
+        result.pop("stdout_path", None)
+        result.pop("stderr_path", None)
     normalize_result_metadata(result)
     return result
 
@@ -907,7 +1122,7 @@ def write_response(output_dir: Path, result: dict) -> None:
         body += f"\n\n[status]\nTimed out{suffix}.\n"
     elif result["returncode"] != 0:
         body += f"\n\n[status]\nExited with code {result['returncode']}.\n"
-    (output_dir / f"{result['tool']}.txt").write_text(body.strip() + "\n", encoding="utf-8")
+    write_text_atomic(output_dir / f"{result['tool']}.txt", body.strip() + "\n")
 
 
 def should_run_parallel(execution: str, mode: str, tool_count: int) -> bool:
@@ -920,6 +1135,84 @@ def should_run_parallel(execution: str, mode: str, tool_count: int) -> bool:
     if execution == "sequential":
         return False
     return True
+
+
+def opencode_serialization_enabled(args: argparse.Namespace) -> bool:
+    return bool(getattr(args, "serialize_opencode", False)) or env_flag_enabled("PANDA_SERIALIZE_OPENCODE")
+
+
+def split_serialized_opencode_commands(commands: dict[str, list[str]]) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    serialized = {name: command for name, command in commands.items() if name in OPENCODE_BACKED_TOOLS}
+    parallel = {name: command for name, command in commands.items() if name not in OPENCODE_BACKED_TOOLS}
+    return parallel, serialized
+
+
+def run_one_shot_command_group(
+    commands: dict[str, list[str]],
+    run_cwd: Path,
+    timeout: int,
+    dry_run: bool,
+    output_dir: Path,
+) -> dict[str, dict]:
+    results = {}
+    for name, command in commands.items():
+        try:
+            results[name] = run_tool(name, command, run_cwd, timeout, dry_run, output_dir)
+        except Exception as exc:
+            results[name] = failed_tool_result(name, command, run_cwd, exc)
+    return results
+
+
+def run_one_shot_commands(
+    commands: dict[str, list[str]],
+    run_cwd: Path,
+    timeout: int,
+    dry_run: bool,
+    output_dir: Path,
+    run_parallel: bool,
+    serialize_opencode: bool,
+) -> dict[str, dict]:
+    if not run_parallel:
+        return run_one_shot_command_group(commands, run_cwd, timeout, dry_run, output_dir)
+
+    raw_results: dict[str, dict] = {}
+    parallel_commands, serialized_opencode = ({}, {})
+    if serialize_opencode:
+        parallel_commands, serialized_opencode = split_serialized_opencode_commands(commands)
+    else:
+        parallel_commands = commands
+
+    with ThreadPoolExecutor(max_workers=max(1, len(parallel_commands) + bool(serialized_opencode))) as executor:
+        futures = {}
+        for name, command in parallel_commands.items():
+            futures[executor.submit(run_tool, name, command, run_cwd, timeout, dry_run, output_dir)] = name
+        if serialized_opencode:
+            futures[
+                executor.submit(
+                    run_one_shot_command_group,
+                    serialized_opencode,
+                    run_cwd,
+                    timeout,
+                    dry_run,
+                    output_dir,
+                )
+            ] = "__serialized_opencode__"
+        for future in as_completed(futures):
+            name = futures[future]
+            try:
+                value = future.result()
+            except Exception as exc:
+                if name == "__serialized_opencode__":
+                    for tool_name, command in serialized_opencode.items():
+                        raw_results[tool_name] = failed_tool_result(tool_name, command, run_cwd, exc)
+                else:
+                    raw_results[name] = failed_tool_result(name, parallel_commands[name], run_cwd, exc)
+                continue
+            if name == "__serialized_opencode__":
+                raw_results.update(value)
+            else:
+                raw_results[name] = value
+    return raw_results
 
 
 def requested_tools(tool: str) -> list[str]:
@@ -1028,25 +1321,16 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
     commands, _ = build_commands(args, prompt, run_cwd)
 
     run_parallel = should_run_parallel(args.execution, args.mode, len(commands))
-    raw_results: dict[str, dict] = {}
-    if run_parallel:
-        with ThreadPoolExecutor(max_workers=len(commands)) as executor:
-            futures = {
-                executor.submit(run_tool, name, command, run_cwd, args.timeout, args.dry_run): name
-                for name, command in commands.items()
-            }
-            for future in as_completed(futures):
-                name = futures[future]
-                try:
-                    raw_results[name] = future.result()
-                except Exception as exc:
-                    raw_results[name] = failed_tool_result(name, commands[name], run_cwd, exc)
-    else:
-        for name, command in commands.items():
-            try:
-                raw_results[name] = run_tool(name, command, run_cwd, args.timeout, args.dry_run)
-            except Exception as exc:
-                raw_results[name] = failed_tool_result(name, command, run_cwd, exc)
+    serialize_opencode = opencode_serialization_enabled(args)
+    raw_results = run_one_shot_commands(
+        commands,
+        run_cwd,
+        args.timeout,
+        args.dry_run,
+        output_dir,
+        run_parallel,
+        serialize_opencode,
+    )
 
     for result in raw_results.values():
         normalize_result_metadata(result)
@@ -1076,8 +1360,9 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
         "workspace": str(workspace),
         "run_cwd": str(run_cwd),
         "requested_tools": requested_tools(args.tool),
+        "serialize_opencode": serialize_opencode,
         "tools": results,
-        "telemetry": build_telemetry(raw_results, artifact_paths),
+        "telemetry": build_telemetry(raw_results, artifact_paths, prompt=prompt),
     }
     manifest.update(profile_manifest_metadata(args))
     write_json(output_dir / "manifest.json", manifest)
@@ -1086,18 +1371,6 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
     for name in commands:
         print(f"- {name}: {output_dir / f'{name}.txt'}")
     return 0
-
-
-def terminate_process(process: subprocess.Popen, grace_seconds: float = 5.0) -> None:
-    if process.poll() is not None:
-        return
-    process.terminate()
-    try:
-        process.wait(timeout=grace_seconds)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=grace_seconds)
-
 
 def session_result(
     name: str,
@@ -1140,9 +1413,10 @@ def finalize_session_result(result: dict, json_tools: set[str]) -> None:
         if raw_path.exists():
             raw_path.replace(raw_jsonl_path)
             result["raw_stdout_path"] = str(raw_jsonl_path)
-        session_id, text, usage = parse_opencode_jsonl(raw_stdout)
+        session_id, text, usage, warnings = parse_opencode_jsonl(raw_stdout, include_warnings=True)
         if session_id:
             result["tool_session_id"] = session_id
+        result["warnings"] = warnings
         result["usage"] = usage
         result["stdout"] = text or raw_stdout
         return
@@ -1172,90 +1446,182 @@ def run_session_tools(
     files = []
     starts: dict[str, float] = {}
 
-    for name, command in commands.items():
-        stdout_path = output_dir / f"{name}.stdout"
-        stderr_path = output_dir / f"{name}.stderr"
-        stdout_file = stdout_path.open("w", encoding="utf-8")
-        stderr_file = stderr_path.open("w", encoding="utf-8")
-        files.extend([stdout_file, stderr_file])
-        started_at = now_iso()
-        results[name] = session_result(name, command, run_cwd, started_at, stdout_path, stderr_path)
+    try:
+        for name, command in commands.items():
+            stdout_path = output_dir / f"{name}.stdout"
+            stderr_path = output_dir / f"{name}.stderr"
+            stdout_file = stdout_path.open("w", encoding="utf-8")
+            stderr_file = stderr_path.open("w", encoding="utf-8")
+            files.extend([stdout_file, stderr_file])
+            started_at = now_iso()
+            results[name] = session_result(name, command, run_cwd, started_at, stdout_path, stderr_path)
+            try:
+                process = popen_process(command, run_cwd, stdout_file, stderr_file)
+            except OSError as exc:
+                stderr_file.write(f"Failed to launch {name}: {exc}\n")
+                stderr_file.flush()
+                results[name].update({
+                    "returncode": -1,
+                    "status": "failed",
+                    "stderr": f"Failed to launch {name}: {exc}",
+                    "finished_at": now_iso(),
+                })
+                normalize_result_metadata(results[name])
+                stdout_file.close()
+                stderr_file.close()
+                continue
+            processes[name] = process
+            starts[name] = time.monotonic()
+
+        first_finished_at: Optional[float] = None
+        while processes:
+            now = time.monotonic()
+            for name, process in list(processes.items()):
+                result = results[name]
+                returncode = process.poll()
+                if returncode is not None:
+                    result.update({
+                        "returncode": returncode,
+                        "status": "finished" if returncode == 0 else "failed",
+                        "finished_at": now_iso(),
+                    })
+                    processes.pop(name)
+                    if first_finished_at is None:
+                        first_finished_at = now
+                    continue
+
+                if now - starts[name] >= timeout:
+                    terminate_process(process)
+                    result.update({
+                        "returncode": process.returncode if process.returncode is not None else -1,
+                        "timed_out": True,
+                        "timeout_kind": "hard",
+                        "status": "hard_timeout",
+                        "finished_at": now_iso(),
+                    })
+                    processes.pop(name)
+                    if first_finished_at is None:
+                        first_finished_at = now
+                    continue
+
+                if first_finished_at is not None and now - first_finished_at >= straggler_timeout:
+                    terminate_process(process)
+                    result.update({
+                        "returncode": process.returncode if process.returncode is not None else -1,
+                        "timed_out": True,
+                        "timeout_kind": "straggler",
+                        "status": "straggler_timeout",
+                        "finished_at": now_iso(),
+                    })
+                    processes.pop(name)
+            if processes:
+                time.sleep(0.2)
+    finally:
         try:
-            process = subprocess.Popen(
-                command,
-                cwd=str(run_cwd),
-                stdout=stdout_file,
-                stderr=stderr_file,
-                text=True,
-            )
-        except OSError as exc:
-            stderr_file.write(f"Failed to launch {name}: {exc}\n")
-            stderr_file.flush()
-            results[name].update({
-                "returncode": -1,
-                "status": "failed",
-                "stderr": f"Failed to launch {name}: {exc}",
-                "finished_at": now_iso(),
-            })
-            normalize_result_metadata(results[name])
-            stdout_file.close()
-            stderr_file.close()
-            continue
-        processes[name] = process
-        starts[name] = time.monotonic()
-
-    first_finished_at: Optional[float] = None
-    while processes:
-        now = time.monotonic()
-        for name, process in list(processes.items()):
-            result = results[name]
-            returncode = process.poll()
-            if returncode is not None:
-                result.update({
-                    "returncode": returncode,
-                    "status": "finished" if returncode == 0 else "failed",
-                    "finished_at": now_iso(),
-                })
-                processes.pop(name)
-                if first_finished_at is None:
-                    first_finished_at = now
-                continue
-
-            if now - starts[name] >= timeout:
-                terminate_process(process)
-                result.update({
-                    "returncode": process.returncode if process.returncode is not None else -1,
-                    "timed_out": True,
-                    "timeout_kind": "hard",
-                    "status": "hard_timeout",
-                    "finished_at": now_iso(),
-                })
-                processes.pop(name)
-                if first_finished_at is None:
-                    first_finished_at = now
-                continue
-
-            if first_finished_at is not None and now - first_finished_at >= straggler_timeout:
-                terminate_process(process)
-                result.update({
-                    "returncode": process.returncode if process.returncode is not None else -1,
-                    "timed_out": True,
-                    "timeout_kind": "straggler",
-                    "status": "straggler_timeout",
-                    "finished_at": now_iso(),
-                })
-                processes.pop(name)
-        if processes:
-            time.sleep(0.2)
-
-    for file_obj in files:
-        if not file_obj.closed:
-            file_obj.close()
+            for process in list(processes.values()):
+                try:
+                    terminate_process(process)
+                except Exception:
+                    if process.poll() is None:
+                        process.kill()
+                        process.wait()
+        finally:
+            processes.clear()
+            for file_obj in files:
+                if not file_obj.closed:
+                    file_obj.close()
 
     for result in results.values():
         finalize_session_result(result, json_tools)
         normalize_result_metadata(result)
     return results
+
+
+def run_session_command_group(
+    commands: dict[str, list[str]],
+    run_cwd: Path,
+    timeout: int,
+    straggler_timeout: int,
+    dry_run: bool,
+    output_dir: Path,
+    json_tools: set[str],
+) -> dict[str, dict]:
+    raw_results = {}
+    for name, command in commands.items():
+        raw_results.update(run_session_tools(
+            {name: command},
+            run_cwd,
+            timeout,
+            straggler_timeout,
+            dry_run,
+            output_dir,
+            {name} if name in json_tools else set(),
+        ))
+    return raw_results
+
+
+def run_session_commands(
+    commands: dict[str, list[str]],
+    run_cwd: Path,
+    timeout: int,
+    straggler_timeout: int,
+    dry_run: bool,
+    output_dir: Path,
+    json_tools: set[str],
+    run_parallel: bool,
+    serialize_opencode: bool,
+) -> dict[str, dict]:
+    if not run_parallel:
+        return run_session_command_group(
+            commands,
+            run_cwd,
+            timeout,
+            straggler_timeout,
+            dry_run,
+            output_dir,
+            json_tools,
+        )
+    if not serialize_opencode:
+        return run_session_tools(commands, run_cwd, timeout, straggler_timeout, dry_run, output_dir, json_tools)
+
+    raw_results = {}
+    parallel_commands, serialized_opencode = split_serialized_opencode_commands(commands)
+    with ThreadPoolExecutor(max_workers=max(1, len(parallel_commands) + bool(serialized_opencode))) as executor:
+        futures = {}
+        if parallel_commands:
+            futures[
+                executor.submit(
+                    run_session_tools,
+                    parallel_commands,
+                    run_cwd,
+                    timeout,
+                    straggler_timeout,
+                    dry_run,
+                    output_dir,
+                    json_tools.intersection(parallel_commands),
+                )
+            ] = "__parallel__"
+        if serialized_opencode:
+            futures[
+                executor.submit(
+                    run_session_command_group,
+                    serialized_opencode,
+                    run_cwd,
+                    timeout,
+                    straggler_timeout,
+                    dry_run,
+                    output_dir,
+                    json_tools.intersection(serialized_opencode),
+                )
+            ] = "__serialized_opencode__"
+        for future in as_completed(futures):
+            try:
+                raw_results.update(future.result())
+            except Exception as exc:
+                failed_commands = parallel_commands if futures[future] == "__parallel__" else serialized_opencode
+                for name, command in failed_commands.items():
+                    raw_results[name] = failed_tool_result(name, command, run_cwd, exc)
+    return raw_results
 
 
 def latest_stopping_suggestion(results: Iterable[dict]) -> Optional[str]:
@@ -1289,23 +1655,50 @@ def compact_json_context(data: dict, max_chars: int) -> str:
     return str(value)
 
 
-def load_previous_turn_context(session: dict, session_path: Path) -> Optional[str]:
+def load_previous_turn_memory(session: dict, session_path: Path) -> tuple[Optional[str], dict]:
     session_id = session.get("session_id")
     previous_turn = int(session.get("turn_count", 0))
+    info = {
+        "enabled": True,
+        "injected": False,
+        "skip_reason": None,
+        "summary_path": None,
+        "characters": 0,
+    }
     if previous_turn < 1:
-        return None
+        info["skip_reason"] = "no_previous_turn"
+        return None, info
     summary_path = next_turn_dir(session_path, previous_turn) / "turn_summary.json"
+    info["summary_path"] = str(summary_path)
     try:
         summary = read_json(summary_path)
     except (OSError, json.JSONDecodeError):
-        return None
+        info["skip_reason"] = "summary_unreadable"
+        return None, info
     if summary.get("schema_version") != SCHEMA_VERSION:
-        return None
+        info["skip_reason"] = "wrong_schema"
+        return None, info
     if summary.get("session_id") != session_id:
-        return None
+        info["skip_reason"] = "wrong_session"
+        return None, info
     if summary.get("turn") != previous_turn:
-        return None
-    return compact_json_context(summary, SESSION_MEMORY_MAX_CHARS)
+        info["skip_reason"] = "wrong_turn"
+        return None, info
+    if summary.get("truncated"):
+        info["skip_reason"] = "summary_truncated"
+        return None, info
+    if not summary.get("turn_status") and not summary.get("findings"):
+        info["skip_reason"] = "empty_summary"
+        return None, info
+    context = compact_json_context(summary, SESSION_MEMORY_MAX_CHARS)
+    info["injected"] = True
+    info["characters"] = len(context)
+    return context, info
+
+
+def load_previous_turn_context(session: dict, session_path: Path) -> Optional[str]:
+    context, _info = load_previous_turn_memory(session, session_path)
+    return context
 
 
 def add_session_memory_to_prompt(user_prompt: str, context: Optional[str]) -> str:
@@ -1352,58 +1745,96 @@ def make_turn_summary(
 
 def run_session(args: argparse.Namespace, user_prompt: str) -> int:
     workspace = args.workspace.resolve()
-    session, session_path, created = make_session(args, workspace)
-    if not created and mode_is_disabled(session.get("mode")):
-        raise SystemExit(PATCH_MODE_DISABLED_MESSAGE)
-    if not created:
-        inherit_session_args(args, session)
-    reject_disabled_mode(args.mode)
-    previous_context = None
-    if not created and not session_memory_disabled(args):
-        previous_context = load_previous_turn_context(session, session_path)
-    prompt_user_context = add_session_memory_to_prompt(user_prompt, previous_context)
-    prompt = consultation_prompt(args.mode, args.role, args.approval_mode, prompt_user_context)
-    session_path.mkdir(parents=True, exist_ok=True)
-    turn_number = int(session.get("turn_count", 0)) + 1
-    turn_dir = next_turn_dir(session_path, turn_number)
-    turn_dir.mkdir(parents=True, exist_ok=False)
-    (turn_dir / "prompt.txt").write_text(prompt + "\n", encoding="utf-8")
+    created = not bool(args.session)
+    if created:
+        session_id = str(uuid.uuid4())
+        session_path = session_root(args) / session_id
+    else:
+        validate_session_id(args.session)
+        session_path = session_root(args) / args.session
+        if not (session_path / "session.json").exists():
+            raise SystemExit(f"Session not found: {args.session}")
 
-    isolated_cwd = session_path / "isolated-cwd"
-    isolated_cwd.mkdir(exist_ok=True)
-    run_cwd = isolated_cwd if args.mode == "advisory" else workspace
+    with SessionLock(session_path):
+        recovery_notes: list[str] = []
+        if created:
+            session = new_session_state(args, workspace, session_path.name)
+            memory_info = {
+                "enabled": not session_memory_disabled(args),
+                "injected": False,
+                "skip_reason": "new_session",
+                "summary_path": None,
+                "characters": 0,
+            }
+        else:
+            session, recovery_notes = load_existing_session(session_path)
+            if mode_is_disabled(session.get("mode")):
+                raise SystemExit(PATCH_MODE_DISABLED_MESSAGE)
+            inherit_session_args(args, session)
+            if session_memory_disabled(args):
+                previous_context = None
+                memory_info = {
+                    "enabled": False,
+                    "injected": False,
+                    "skip_reason": "disabled",
+                    "summary_path": None,
+                    "characters": 0,
+                }
+            else:
+                previous_context, memory_info = load_previous_turn_memory(session, session_path)
+                memory_info["enabled"] = True
+        reject_disabled_mode(args.mode)
 
-    commands, json_tools = build_commands(args, prompt, run_cwd, session=session)
-    profile_metadata = profile_manifest_metadata(args)
-    session.update({
-        "updated_at": now_iso(),
-        "status": "running",
-        "runner_pid": os.getpid(),
-        "runner_started_at": now_iso(),
-        "workspace": str(workspace),
-        "tool": args.tool,
-        "mode": args.mode,
-        "role": args.role,
-        "approval_mode": args.approval_mode,
-        "execution": args.execution,
-        "requested_tools": requested_tools(args.tool),
-        "models": dict(profile_metadata["effective_models"]),
-        "profile": profile_metadata["profile"],
-        "profile_source": profile_metadata["profile_source"],
-        "cost_tier": profile_metadata["cost_tier"],
-        "effective_models": dict(profile_metadata["effective_models"]),
-        "active_models": dict(profile_metadata["active_models"]),
-        "effective_effort": dict(profile_metadata["effective_effort"]),
-        "requested_models": dict(profile_metadata["requested_models"]),
-        "requested_effort": dict(profile_metadata["requested_effort"]),
-        "effort_support": dict(profile_metadata["effort_support"]),
-        "applied_effort": dict(profile_metadata["applied_effort"]),
-    })
-    write_json(session_path / "session.json", session)
+        if created or session_memory_disabled(args):
+            previous_context = None
+        prompt_user_context = add_session_memory_to_prompt(user_prompt, previous_context)
+        prompt = consultation_prompt(args.mode, args.role, args.approval_mode, prompt_user_context)
+        session_path.mkdir(parents=True, exist_ok=True)
+        turn_number, turn_dir = next_available_turn_dir(
+            session_path,
+            int(session.get("turn_count", 0)) + 1,
+            recovery_notes,
+        )
+        turn_dir.mkdir(parents=True, exist_ok=False)
+        write_text_atomic(turn_dir / "prompt.txt", prompt + "\n")
 
-    run_parallel = should_run_parallel(args.execution, args.mode, len(commands))
-    if run_parallel:
-        raw_results = run_session_tools(
+        isolated_cwd = session_path / "isolated-cwd"
+        isolated_cwd.mkdir(exist_ok=True)
+        run_cwd = isolated_cwd if args.mode == "advisory" else workspace
+
+        commands, json_tools = build_commands(args, prompt, run_cwd, session=session)
+        profile_metadata = profile_manifest_metadata(args)
+        session.update({
+            "updated_at": now_iso(),
+            "status": "running",
+            "runner_pid": os.getpid(),
+            "runner_started_at": now_iso(),
+            "workspace": str(workspace),
+            "tool": args.tool,
+            "mode": args.mode,
+            "role": args.role,
+            "approval_mode": args.approval_mode,
+            "execution": args.execution,
+            "requested_tools": requested_tools(args.tool),
+            "models": dict(profile_metadata["effective_models"]),
+            "profile": profile_metadata["profile"],
+            "profile_source": profile_metadata["profile_source"],
+            "cost_tier": profile_metadata["cost_tier"],
+            "effective_models": dict(profile_metadata["effective_models"]),
+            "active_models": dict(profile_metadata["active_models"]),
+            "effective_effort": dict(profile_metadata["effective_effort"]),
+            "requested_models": dict(profile_metadata["requested_models"]),
+            "requested_effort": dict(profile_metadata["requested_effort"]),
+            "effort_support": dict(profile_metadata["effort_support"]),
+            "applied_effort": dict(profile_metadata["applied_effort"]),
+        })
+        if recovery_notes:
+            session["recovery_notes"] = recovery_notes
+        write_json(session_path / "session.json", session)
+
+        run_parallel = should_run_parallel(args.execution, args.mode, len(commands))
+        serialize_opencode = opencode_serialization_enabled(args)
+        raw_results = run_session_commands(
             commands,
             run_cwd,
             args.timeout,
@@ -1411,85 +1842,84 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
             args.dry_run,
             turn_dir,
             json_tools,
+            run_parallel,
+            serialize_opencode,
         )
-    else:
-        raw_results = {}
-        for name, command in commands.items():
-            raw_results.update(run_session_tools(
-                {name: command},
-                run_cwd,
-                args.timeout,
-                args.straggler_timeout,
-                args.dry_run,
-                turn_dir,
-                {name} if name in json_tools else set(),
-            ))
 
-    for name in json_tools:
-        if name in raw_results and raw_results[name].get("tool_session_id"):
-            session.setdefault("tool_session_ids", {})[name] = raw_results[name]["tool_session_id"]
+        for name in json_tools:
+            if name in raw_results and raw_results[name].get("tool_session_id"):
+                session.setdefault("tool_session_ids", {})[name] = raw_results[name]["tool_session_id"]
 
-    for result in raw_results.values():
-        normalize_result_metadata(result)
+        for result in raw_results.values():
+            normalize_result_metadata(result)
 
-    results = []
-    for name in commands:
-        result = raw_results[name]
-        results.append({key: value for key, value in result.items() if key not in {"stdout", "stderr"}})
-        write_response(turn_dir, result)
+        results = []
+        for name in commands:
+            result = raw_results[name]
+            results.append({key: value for key, value in result.items() if key not in {"stdout", "stderr"}})
+            write_response(turn_dir, result)
 
-    artifact_info = write_run_artifacts(turn_dir, raw_results, commands)
-    artifact_paths = {
-        "evidence": artifact_info["evidence_path"],
-        "summaries": artifact_info["summary_paths"],
-    }
+        artifact_info = write_run_artifacts(turn_dir, raw_results, commands)
+        artifact_paths = {
+            "evidence": artifact_info["evidence_path"],
+            "summaries": artifact_info["summary_paths"],
+        }
 
-    stopping_suggestion = latest_stopping_suggestion(raw_results.values())
-    current_turn_status = turn_status(raw_results.values())
-    turn_summary = make_turn_summary(
-        session["session_id"],
-        turn_number,
-        current_turn_status,
-        stopping_suggestion,
-        artifact_info["evidence"],
-    )
-    write_limited_json(turn_dir / "turn_summary.json", turn_summary, SESSION_MEMORY_MAX_CHARS)
-    session.update({
-        "updated_at": now_iso(),
-        "status": "waiting_for_user",
-        "runner_pid": None,
-        "turn_count": turn_number,
-        "last_turn_status": current_turn_status,
-        "latest_stopping_suggestion": stopping_suggestion,
-    })
+        stopping_suggestion = latest_stopping_suggestion(raw_results.values())
+        current_turn_status = turn_status(raw_results.values())
+        turn_summary = make_turn_summary(
+            session["session_id"],
+            turn_number,
+            current_turn_status,
+            stopping_suggestion,
+            artifact_info["evidence"],
+        )
+        write_limited_json(turn_dir / "turn_summary.json", turn_summary, SESSION_MEMORY_MAX_CHARS)
+        session.update({
+            "updated_at": now_iso(),
+            "status": "waiting_for_user",
+            "runner_pid": None,
+            "turn_count": turn_number,
+            "last_turn_status": current_turn_status,
+            "latest_stopping_suggestion": stopping_suggestion,
+        })
 
-    manifest = {
-        "schema_version": SCHEMA_VERSION,
-        "session_id": session["session_id"],
-        "session_created": created,
-        "turn": turn_number,
-        "mode": args.mode,
-        "execution": "parallel" if run_parallel else "sequential",
-        "requested_execution": args.execution,
-        "approval_mode": args.approval_mode,
-        "role": args.role,
-        "dry_run": args.dry_run,
-        "output_dir": str(turn_dir),
-        "session_dir": str(session_path),
-        "workspace": str(workspace),
-        "tool": args.tool,
-        "run_cwd": str(run_cwd),
-        "requested_tools": requested_tools(args.tool),
-        "straggler_timeout": args.straggler_timeout,
-        "timeout": args.timeout,
-        "turn_status": current_turn_status,
-        "stopping_suggestion": stopping_suggestion,
-        "tools": results,
-        "telemetry": build_telemetry(raw_results, artifact_paths),
-    }
-    manifest.update(profile_metadata)
-    write_json(turn_dir / "manifest.json", manifest)
-    write_json(session_path / "session.json", session)
+        recovery_warnings = [{"tool": None, "code": note} for note in recovery_notes]
+        manifest = {
+            "schema_version": SCHEMA_VERSION,
+            "session_id": session["session_id"],
+            "session_created": created,
+            "turn": turn_number,
+            "mode": args.mode,
+            "execution": "parallel" if run_parallel else "sequential",
+            "requested_execution": args.execution,
+            "approval_mode": args.approval_mode,
+            "role": args.role,
+            "dry_run": args.dry_run,
+            "output_dir": str(turn_dir),
+            "session_dir": str(session_path),
+            "workspace": str(workspace),
+            "tool": args.tool,
+            "run_cwd": str(run_cwd),
+            "requested_tools": requested_tools(args.tool),
+            "serialize_opencode": serialize_opencode,
+            "session_memory": memory_info,
+            "recovery_notes": recovery_notes,
+            "straggler_timeout": args.straggler_timeout,
+            "timeout": args.timeout,
+            "turn_status": current_turn_status,
+            "stopping_suggestion": stopping_suggestion,
+            "tools": results,
+            "telemetry": build_telemetry(
+                raw_results,
+                artifact_paths,
+                prompt=prompt,
+                extra_warnings=recovery_warnings,
+            ),
+        }
+        manifest.update(profile_metadata)
+        write_json(turn_dir / "manifest.json", manifest)
+        write_json(session_path / "session.json", session)
 
     print(f"Wrote AI team session turn to {turn_dir}")
     print(f"- session: {session['session_id']}")

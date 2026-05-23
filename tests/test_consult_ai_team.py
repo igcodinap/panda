@@ -3,8 +3,10 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
+import time
 from typing import Optional
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -32,6 +34,16 @@ class ExecutionModeTests(unittest.TestCase):
 
     def test_sequential_override(self) -> None:
         self.assertFalse(consult_ai_team.should_run_parallel("sequential", "explore", 2))
+
+    def test_opencode_tools_still_parallelize_by_default(self) -> None:
+        self.assertTrue(consult_ai_team.should_run_parallel("auto", "explore", 2))
+        parallel, serialized = consult_ai_team.split_serialized_opencode_commands({
+            "claude": ["claude"],
+            "opencode": ["opencode"],
+            "qwen": ["opencode"],
+        })
+        self.assertEqual(list(parallel), ["claude"])
+        self.assertEqual(list(serialized), ["opencode", "qwen"])
 
 
 class ArgumentValidationTests(unittest.TestCase):
@@ -91,6 +103,14 @@ class ArgumentValidationTests(unittest.TestCase):
             self.parse_with(["--timeout", "0", "--prompt", "test"])
         with self.assertRaises(SystemExit):
             self.parse_with(["--straggler-timeout", "0", "--prompt", "test"])
+
+    def test_serialize_opencode_flag_and_env_are_supported(self) -> None:
+        args = self.parse_with(["--serialize-opencode", "--prompt", "test"])
+        self.assertTrue(consult_ai_team.opencode_serialization_enabled(args))
+
+        args = self.parse_with(["--prompt", "test"])
+        with patch.dict(os.environ, {"PANDA_SERIALIZE_OPENCODE": "1"}):
+            self.assertTrue(consult_ai_team.opencode_serialization_enabled(args))
 
 
 class ProfileResolutionTests(unittest.TestCase):
@@ -352,6 +372,54 @@ class ManifestTests(unittest.TestCase):
             self.assertEqual(manifest["active_models"], {"opencode": consult_ai_team.DEFAULT_OPENCODE_MODEL})
             self.assertEqual([tool["tool"] for tool in manifest["tools"]], ["opencode"])
 
+    def test_manifest_records_prompt_soft_limit_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            prompt = "x" * (consult_ai_team.PROMPT_WARN_CHARS + 1)
+            args = self.parse_with([
+                "--tool",
+                "claude",
+                "--dry-run",
+                "--output-dir",
+                tmpdir,
+                "--prompt",
+                prompt,
+            ])
+            full_prompt = consult_ai_team.consultation_prompt(args.mode, args.role, args.approval_mode, prompt)
+
+            with patch.object(consult_ai_team, "claude_supports_effort", return_value=False):
+                with redirect_stdout(io.StringIO()):
+                    consult_ai_team.run_one_shot(args, full_prompt)
+
+            manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertTrue(manifest["telemetry"]["prompt"]["warning"])
+            self.assertIn(
+                {"tool": None, "code": "prompt_soft_limit_exceeded"},
+                manifest["telemetry"]["warnings"],
+            )
+
+    def test_manifest_records_serialize_opencode_diagnostic_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = self.parse_with([
+                "--tool",
+                "all",
+                "--dry-run",
+                "--serialize-opencode",
+                "--output-dir",
+                tmpdir,
+                "--prompt",
+                "test",
+            ])
+            prompt = consult_ai_team.consultation_prompt(args.mode, args.role, args.approval_mode, "test")
+
+            with patch.object(consult_ai_team, "claude_supports_effort", return_value=False):
+                with redirect_stdout(io.StringIO()):
+                    consult_ai_team.run_one_shot(args, prompt)
+
+            manifest = json.loads((Path(tmpdir) / "manifest.json").read_text(encoding="utf-8"))
+            self.assertTrue(manifest["serialize_opencode"])
+            self.assertEqual(manifest["execution"], "parallel")
+
     def test_prompt_file_is_included_in_one_shot_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir) / "out"
@@ -569,6 +637,21 @@ class SessionTests(unittest.TestCase):
 
         self.assertEqual(usage["input_tokens"], 1500)
         self.assertEqual(usage["output_tokens"], 250)
+
+    def test_opencode_jsonl_warnings_are_best_effort(self) -> None:
+        raw = "\n".join([
+            "{bad",
+            '{"type":"text","part":{"text":"hello"}}',
+        ])
+
+        session_id, text, usage, warnings = consult_ai_team.parse_opencode_jsonl(raw, include_warnings=True)
+
+        self.assertIsNone(session_id)
+        self.assertEqual(text, "hello")
+        self.assertEqual(usage, consult_ai_team.NULL_USAGE)
+        self.assertIn("opencode_jsonl_malformed_lines_skipped", warnings)
+        self.assertIn("opencode_session_id_missing", warnings)
+        self.assertIn("opencode_usage_missing", warnings)
 
     def test_session_dry_run_creates_and_continues_turns(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -838,6 +921,112 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(session["last_turn_status"], "degraded")
             self.assertIsNone(session["runner_pid"])
 
+    def test_stale_running_session_recovery_is_recorded_in_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session_dir = Path(tmpdir) / "stale"
+            session_dir.mkdir()
+            consult_ai_team.write_json(session_dir / "session.json", {
+                "schema_version": consult_ai_team.SCHEMA_VERSION,
+                "session_id": "stale",
+                "status": "running",
+                "runner_pid": 99999999,
+                "turn_count": 0,
+                "tool_session_ids": {},
+            })
+            args = self.parse_with([
+                "--session",
+                "stale",
+                "--session-dir",
+                tmpdir,
+                "--tool",
+                "claude",
+                "--dry-run",
+                "--prompt",
+                "test",
+            ])
+
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_session(args, "test")
+
+            manifest = json.loads((session_dir / "turns" / "001" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertIn("recovered_stale_running_session", manifest["recovery_notes"])
+            self.assertIn(
+                {"tool": None, "code": "recovered_stale_running_session"},
+                manifest["telemetry"]["warnings"],
+            )
+
+    def test_existing_turn_directory_is_preserved_and_next_turn_is_allocated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session_dir = Path(tmpdir) / "partial"
+            (session_dir / "turns" / "002").mkdir(parents=True)
+            consult_ai_team.write_json(session_dir / "session.json", {
+                "schema_version": consult_ai_team.SCHEMA_VERSION,
+                "session_id": "partial",
+                "status": "waiting_for_user",
+                "turn_count": 1,
+                "tool_session_ids": {},
+            })
+            args = self.parse_with([
+                "--session",
+                "partial",
+                "--session-dir",
+                tmpdir,
+                "--tool",
+                "claude",
+                "--dry-run",
+                "--prompt",
+                "test",
+            ])
+
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_session(args, "test")
+
+            self.assertTrue((session_dir / "turns" / "002").exists())
+            self.assertTrue((session_dir / "turns" / "003" / "manifest.json").exists())
+            manifest = json.loads((session_dir / "turns" / "003" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertIn("skipped_existing_turn_dir:002", manifest["recovery_notes"])
+            session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+            self.assertEqual(session["turn_count"], 3)
+
+    def test_same_session_subprocess_continuations_allocate_unique_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session_dir = Path(tmpdir) / "concurrent"
+            session_dir.mkdir()
+            consult_ai_team.write_json(session_dir / "session.json", {
+                "schema_version": consult_ai_team.SCHEMA_VERSION,
+                "session_id": "concurrent",
+                "status": "waiting_for_user",
+                "turn_count": 0,
+                "tool_session_ids": {},
+            })
+            env = dict(os.environ)
+            env["PYTHONPYCACHEPREFIX"] = str(Path(tmpdir) / "pycache")
+            command = [
+                sys.executable,
+                str(MODULE_PATH),
+                "--session",
+                "concurrent",
+                "--session-dir",
+                tmpdir,
+                "--tool",
+                "claude",
+                "--dry-run",
+                "--prompt",
+                "test",
+            ]
+
+            proc_1 = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+            proc_2 = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+            out_1, err_1 = proc_1.communicate(timeout=10)
+            out_2, err_2 = proc_2.communicate(timeout=10)
+
+            self.assertEqual(proc_1.returncode, 0, err_1 + out_1)
+            self.assertEqual(proc_2.returncode, 0, err_2 + out_2)
+            self.assertTrue((session_dir / "turns" / "001" / "manifest.json").exists())
+            self.assertTrue((session_dir / "turns" / "002" / "manifest.json").exists())
+            session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+            self.assertEqual(session["turn_count"], 2)
+
     def test_patch_mode_session_continuation_is_rejected_clearly(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             session_dir = Path(tmpdir) / "old_patch"
@@ -1089,6 +1278,45 @@ class SessionTests(unittest.TestCase):
             prompt = (session_dir / "turns" / "002" / "prompt.txt").read_text(encoding="utf-8")
             self.assertNotIn("Previous Panda turn summary", prompt)
 
+    def test_malformed_previous_summary_is_skipped_and_recorded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = self.parse_with([
+                "--session",
+                "--session-dir",
+                tmpdir,
+                "--tool",
+                "claude",
+                "--dry-run",
+                "--prompt",
+                "first",
+            ])
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_session(args, "first")
+
+            session_dir = next(Path(tmpdir).iterdir())
+            session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+            (session_dir / "turns" / "001" / "turn_summary.json").write_text("{bad", encoding="utf-8")
+            args = self.parse_with([
+                "--session",
+                session["session_id"],
+                "--session-dir",
+                tmpdir,
+                "--tool",
+                "claude",
+                "--dry-run",
+                "--prompt",
+                "second",
+            ])
+
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_session(args, "second")
+
+            prompt = (session_dir / "turns" / "002" / "prompt.txt").read_text(encoding="utf-8")
+            manifest = json.loads((session_dir / "turns" / "002" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertNotIn("Previous Panda turn summary", prompt)
+            self.assertFalse(manifest["session_memory"]["injected"])
+            self.assertEqual(manifest["session_memory"]["skip_reason"], "summary_unreadable")
+
     def test_session_tools_straggler_timeout_returns_partial_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -1134,6 +1362,105 @@ class SessionTests(unittest.TestCase):
             self.assertTrue(results["slow"]["timed_out"])
             self.assertEqual(results["slow"]["timeout_kind"], "hard")
             self.assertIn("start", results["slow"]["stdout"])
+
+    def test_session_tools_hard_timeout_kills_child_process_group(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            child_pid_file = output_dir / "child.pid"
+            script = (
+                "import subprocess, sys, time; "
+                "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
+                f"open({str(child_pid_file)!r}, 'w').write(str(child.pid)); "
+                "print('spawned', child.pid, flush=True); "
+                "time.sleep(60)"
+            )
+
+            results = consult_ai_team.run_session_tools(
+                {"slow": [sys.executable, "-c", script]},
+                Path.cwd(),
+                timeout=1,
+                straggler_timeout=1,
+                dry_run=False,
+                output_dir=output_dir,
+                json_tools=set(),
+            )
+
+            self.assertTrue(results["slow"]["timed_out"])
+            child_pid = int(child_pid_file.read_text(encoding="utf-8"))
+            for _ in range(20):
+                if not consult_ai_team.process_is_running(child_pid):
+                    break
+                time.sleep(0.1)
+            self.assertFalse(consult_ai_team.process_is_running(child_pid))
+
+    def test_session_tools_exception_cleanup_kills_running_processes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            launched = []
+            real_popen = consult_ai_team.popen_process
+
+            def recording_popen(*args, **kwargs):
+                process = real_popen(*args, **kwargs)
+                launched.append(process)
+                return process
+
+            with patch.object(consult_ai_team, "popen_process", side_effect=recording_popen):
+                with patch.object(consult_ai_team.time, "sleep", side_effect=RuntimeError("boom")):
+                    with self.assertRaises(RuntimeError):
+                        consult_ai_team.run_session_tools(
+                            {"slow": [sys.executable, "-c", "import time; time.sleep(60)"]},
+                            Path.cwd(),
+                            timeout=30,
+                            straggler_timeout=30,
+                            dry_run=False,
+                            output_dir=output_dir,
+                            json_tools=set(),
+                        )
+
+            self.assertEqual(len(launched), 1)
+            self.assertIsNotNone(launched[0].poll())
+
+    def test_session_tools_exception_cleanup_closes_output_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            real_popen = consult_ai_team.popen_process
+
+            with patch.object(consult_ai_team, "popen_process", side_effect=real_popen):
+                with patch.object(consult_ai_team.time, "sleep", side_effect=RuntimeError("boom")):
+                    with self.assertRaises(RuntimeError):
+                        consult_ai_team.run_session_tools(
+                            {"slow": [sys.executable, "-c", "import time; time.sleep(60)"]},
+                            Path.cwd(),
+                            timeout=30,
+                            straggler_timeout=30,
+                            dry_run=False,
+                            output_dir=output_dir,
+                            json_tools=set(),
+                        )
+
+            self.assertTrue((output_dir / "slow.stdout").exists())
+            self.assertTrue((output_dir / "slow.stderr").exists())
+
+    def test_timeout_evidence_references_raw_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            results = consult_ai_team.run_session_tools(
+                {"slow": [sys.executable, "-c", "import time; print('start', flush=True); time.sleep(3)"]},
+                Path.cwd(),
+                timeout=1,
+                straggler_timeout=1,
+                dry_run=False,
+                output_dir=output_dir,
+                json_tools=set(),
+            )
+            consult_ai_team.write_response(output_dir, results["slow"])
+
+            artifact_info = consult_ai_team.write_run_artifacts(output_dir, results, ["slow"])
+
+            finding = artifact_info["evidence"]["findings"][0]
+            self.assertTrue(finding["timed_out"])
+            self.assertEqual(finding["raw_output_path"], str(output_dir / "slow.txt"))
+            self.assertEqual(finding["stderr_path"], str(output_dir / "slow.stderr"))
 
     def test_failed_tool_marks_degraded_turn(self) -> None:
         results = [
