@@ -1,0 +1,27 @@
+references/evaluation-results/20260525-hard-local/summary.json
+  s_11341de7cfb95b::t_531e958961166b 3,26,28,35,37-40,44-52,58-66,72
+references/evaluation-results/20260525-hard-local/flipt-ecr-codex_alone_scout-result.json
+  s_11341de7cfb95b::t_1495a4cab29ec0 1-19
+references/evaluation-findings.md
+  s_11341de7cfb95b::t_400c88fd343ee9 102,104,106-107,109-110,114,116-117,119-124,129
+references/evaluation-results/20260525-hard-local/flipt-audit-panda_replay-result.json
+  s_11341de7cfb95b::t_1495a4cab29ec0 1-41
+references/evaluation-results/20260525-hard-local/flipt-ecr-panda_replay-result.json
+  s_11341de7cfb95b::t_1495a4cab29ec0 1-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "72a30b0c62389dc478e8b0ac36ddcd486daae50a",
+  "prompts": {},
+  "sessions": {
+    "s_11341de7cfb95b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e522c-432f-7803-8147-b257e34b4fee",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
