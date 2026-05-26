@@ -99,29 +99,34 @@ Protocol:
 - The reliability canary passed: unit tests, Panda dry-run artifacts, one short real Panda explore run, and process cleanup check.
 - Claude had no quota, budget, rate-limit, auth, billing, or usage exhaustion in the canary. One Qwen best-effort budget flag was recorded during the real canary, but the run completed and does not trigger the phase's Claude-core failure rule.
 
-Scout results so far:
+Scout and replay results so far:
 
-| Task | Repo | Codex-alone scout | Official outcome | Notes |
+| Task | Repo | Codex-alone scout | Panda replay | Notes |
 | --- | --- | --- | --- | --- |
-| `instance_ansible__ansible-e40889e7112ae00a21a2c74312b330e67a766cc0-v1055803c3a812189a1133297f7f5468579283f86` | `ansible/ansible` | `accepted` | accepted | Wall time includes first-run harness setup; final official evaluator pass took about 19 seconds. |
-| `instance_element-hq__element-web-4fec436883b601a3cac2d4a58067e597f737b817-vnan` | `element-hq/element-web` | `accepted` | accepted | Public model outcome metadata showed 9/9 failures; Codex solved it after focused repair. |
+| `instance_ansible__ansible-e40889e7112ae00a21a2c74312b330e67a766cc0-v1055803c3a812189a1133297f7f5468579283f86` | `ansible/ansible` | `accepted` | not replayed | Wall time includes first-run harness setup; final official evaluator pass took about 19 seconds. |
+| `instance_element-hq__element-web-4fec436883b601a3cac2d4a58067e597f737b817-vnan` | `element-hq/element-web` | `accepted` | not replayed | Public model outcome metadata showed 9/9 failures; Codex solved it after focused repair. |
 | `instance_navidrome__navidrome-d0dceae0943b8df16e579c2d9437e11760a0626a` | `navidrome/navidrome` | `contaminated` | excluded | Excluded before solving after accidental exposure of gold patch/test metadata from a local helper JSON. |
-| `instance_flipt-io__flipt-e50808c03e4b9d25a6a78af9c61a3b1616ea356b` | `flipt-io/flipt` | `timeout` | not accepted | Hidden config and audit interceptor suites passed, but `TestSinkSpanExporter` timed out after 10 minutes; official SWE-bench Pro accuracy was 0.0. |
+| `instance_flipt-io__flipt-e50808c03e4b9d25a6a78af9c61a3b1616ea356b` | `flipt-io/flipt` | `timeout` | `timeout` | Panda evidence was used and all cores succeeded, but official hidden `TestSinkSpanExporter` still timed out after 10 minutes. |
+| `instance_flipt-io__flipt-96820c3ad10b0b2305e8877b6b303f7fafdf815f` | `flipt-io/flipt` | `failed_tests` | `failed_tests` | Panda evidence correctly pushed toward a credential-store design, but the final official run still failed `TestStore_FetchWithECR` and `TestPrivateClient`. |
 
 Current clean hard-local metrics:
 
-- Clean scout tasks: 3.
+- Clean scout tasks: 4.
 - Accepted clean scout tasks: 2.
-- Clean Codex scout pass rate: 66.7%.
-- Codex struggle tasks found: 1.
+- Clean Codex scout pass rate: 50.0%.
+- Codex struggle tasks found: 2.
 - Contaminated tasks excluded from clean claims: 1.
-- Panda replay tasks run: 0.
-- First Panda replay candidate: `instance_flipt-io__flipt-e50808c03e4b9d25a6a78af9c61a3b1616ea356b`.
+- Panda replay tasks run: 2.
+- Panda replay accepted tasks: 0.
+- Failure-to-success rescue rate: 0.0%.
+- Panda runner failure rate: 0.0%.
+- Claude budget/rate/auth failure rate: 0.0%.
+- Evidence use rate on Panda replays: 100.0%.
 
 Portable proof artifacts:
 
 - The 5-task pilot result JSON files are committed under `references/evaluation-results/20260525-nightly/` as compact per-task summaries.
-- The hard-local run manifest, canary result, scout result JSON files, and summary are committed under `references/evaluation-results/20260525-hard-local/`.
+- The hard-local run manifest, canary result, scout/replay result JSON files, and summary are committed under `references/evaluation-results/20260525-hard-local/`.
 - The hard-local patches and official evaluator logs remain under `/private/tmp/panda-eval/20260525-hard-local`.
 - Raw local logs under `logs/` are intentionally not part of the portable evidence set unless a future publication needs them; the committed docs and JSON summaries preserve the results without carrying large machine-local transcripts.
 

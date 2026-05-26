@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "task_id": "instance_flipt-io__flipt-96820c3ad10b0b2305e8877b6b303f7fafdf815f",
+  "variant": "codex_alone_scout",
+  "tests_passed": false,
+  "accepted": false,
+  "regression": false,
+  "classification": "failed_tests",
+  "contaminated": false,
+  "benchmark_invalid": false,
+  "wall_seconds": 1800.0,
+  "panda_run_failed": false,
+  "claude_budget_failure": false,
+  "evidence_used": false,
+  "notes": "Codex-alone scout produced a local green focused OCI/ECR patch, but the official SWE-bench Pro hidden tests failed. The final official run reached the correct current patch and failed on hidden CredentialsStore API expectations and TestStore_FetchWithECR; evaluator accuracy 0.0. This is a clean Codex struggle candidate for Panda replay.",
+  "patch_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_flipt-io__flipt-96820c3ad10b0b2305e8877b6b303f7fafdf815f/codex_alone_scout/patch.diff",
+  "test_output_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_flipt-io__flipt-96820c3ad10b0b2305e8877b6b303f7fafdf815f/codex_alone_scout/pro_eval/instance_flipt-io__flipt-96820c3ad10b0b2305e8877b6b303f7fafdf815f/codex_alone_scout_stdout.log",
+  "recorded_at": "2026-05-26T02:25:10.496094+00:00"
+}

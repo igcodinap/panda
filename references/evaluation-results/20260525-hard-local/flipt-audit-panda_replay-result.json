@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "task_id": "instance_flipt-io__flipt-e50808c03e4b9d25a6a78af9c61a3b1616ea356b",
+  "variant": "panda_replay",
+  "tests_passed": false,
+  "accepted": false,
+  "regression": false,
+  "classification": "timeout",
+  "contaminated": false,
+  "benchmark_invalid": false,
+  "wall_seconds": 677.0,
+  "panda_run_failed": false,
+  "claude_budget_failure": false,
+  "evidence_used": true,
+  "notes": "Panda completed successfully with all three cores and no Claude budget failure. Codex used Panda's sink/exporter flushing finding and patched variadic sink dispatch, but official hidden TestSinkSpanExporter still timed out after 10 minutes. TestLoad and parsed audit interceptor tests passed.",
+  "patch_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_flipt-io__flipt-e50808c03e4b9d25a6a78af9c61a3b1616ea356b/panda_replay/patch.diff",
+  "test_output_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_flipt-io__flipt-e50808c03e4b9d25a6a78af9c61a3b1616ea356b/panda_replay/pro_eval/instance_flipt-io__flipt-e50808c03e4b9d25a6a78af9c61a3b1616ea356b/panda_replay_stdout.log",
+  "recorded_at": "2026-05-26T01:56:31.656268+00:00",
+  "panda_output_dir": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_flipt-io__flipt-e50808c03e4b9d25a6a78af9c61a3b1616ea356b/panda_replay/panda",
+  "panda_core_status": {
+    "claude": {
+      "status": "success",
+      "returncode": 0,
+      "timed_out": false,
+      "budget_failure": false
+    },
+    "opencode": {
+      "status": "success",
+      "returncode": 0,
+      "timed_out": false,
+      "budget_failure": false
+    },
+    "qwen": {
+      "status": "success",
+      "returncode": 0,
+      "timed_out": false,
+      "budget_failure": false
+    }
+  },
+  "panda_artifact_failures": []
+}
