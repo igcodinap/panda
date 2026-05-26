@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -18,10 +19,18 @@ from typing import Iterable, Optional
 
 SCHEMA_VERSION = 1
 LEGACY_VARIANTS = ("codex_alone", "panda_explore")
-HARD_LOCAL_VARIANTS = ("codex_alone_scout", "panda_replay")
-VARIANTS = (*LEGACY_VARIANTS, *HARD_LOCAL_VARIANTS)
 SCOUT_VARIANT = "codex_alone_scout"
 REPLAY_VARIANT = "panda_replay"
+SECOND_PASS_VARIANT = "panda_replay_second_pass"
+HARD_LOCAL_VARIANTS = (SCOUT_VARIANT, REPLAY_VARIANT, SECOND_PASS_VARIANT)
+VARIANTS = (*LEGACY_VARIANTS, *HARD_LOCAL_VARIANTS)
+PANDA_RESULT_VARIANTS = {"panda_explore", REPLAY_VARIANT, SECOND_PASS_VARIANT}
+ADVICE_QUALITY_FIELDS = (
+    "panda_direction_correct",
+    "panda_missed_contract",
+    "codex_implementation_error",
+    "evidence_was_actionable",
+)
 SCOUT_STRUGGLE_CLASSIFICATIONS = {
     "failed_tests",
     "timeout",
@@ -49,6 +58,12 @@ HARD_LOCAL_TARGET_COUNT = 20
 HARD_LOCAL_EXPANSION_COUNT = 10
 HARD_LOCAL_MAX_COUNT = 30
 HARD_LOCAL_REPO_CAP = 3
+SECOND_PASS_TASK_MAX_CHARS = 2000
+SECOND_PASS_EVIDENCE_MAX_CHARS = 8000
+SECOND_PASS_PATCH_MAX_CHARS = 8000
+SECOND_PASS_PATCH_MAX_LINES = 200
+SECOND_PASS_TEST_MAX_CHARS = 8000
+SECOND_PASS_FAILURE_CONTEXT_LINES = 3
 HARD_DATASET_SOURCES = (
     ("swebench_pro", "ScaleAI/SWE-bench_Pro", "test"),
     ("swebench_full", "princeton-nlp/SWE-bench", "test"),
@@ -130,6 +145,15 @@ def write_json(path: Path, data: dict) -> None:
 
 def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def read_json_safe(path: Path) -> tuple[Optional[dict], Optional[str]]:
+    try:
+        return read_json(path), None
+    except OSError as exc:
+        return None, f"missing:{path}:{exc}"
+    except json.JSONDecodeError as exc:
+        return None, f"malformed:{path}:{exc}"
 
 
 def git_commit() -> Optional[str]:
@@ -505,6 +529,407 @@ def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def clip_text(text: str, max_chars: int) -> tuple[str, bool]:
+    if len(text) <= max_chars:
+        return text, False
+    marker = "\n[truncated]\n"
+    keep = max(0, max_chars - len(marker))
+    return text[:keep].rstrip() + marker, True
+
+
+def load_result_record(run_dir: Path, task_id: str, variant: str) -> Optional[dict]:
+    path = result_dir(run_dir, task_id, variant) / "result.json"
+    if not path.exists():
+        return None
+    try:
+        return read_json(path)
+    except json.JSONDecodeError:
+        return None
+
+
+def load_task_context(run_dir: Path, task_id: str) -> tuple[dict, list[str]]:
+    warnings = []
+    tasks_path = run_dir / "tasks.json"
+    task = {"task_id": task_id}
+    data, warning = read_json_safe(tasks_path)
+    if warning:
+        warnings.append(warning)
+        return task, warnings
+    tasks = data.get("tasks") if isinstance(data, dict) else []
+    for candidate in tasks:
+        if isinstance(candidate, dict) and candidate.get("task_id") == task_id:
+            task = {
+                "task_id": candidate.get("task_id"),
+                "dataset": candidate.get("dataset"),
+                "dataset_name": candidate.get("dataset_name"),
+                "repo_hint": candidate.get("repo_hint"),
+                "base_commit": candidate.get("base_commit"),
+                "problem_statement": candidate.get("problem_statement"),
+                "hardness": candidate.get("hardness"),
+            }
+            break
+    return {key: value for key, value in task.items() if value is not None}, warnings
+
+
+def compact_task_context(task: dict, max_chars: int) -> tuple[str, bool]:
+    lines = [
+        f"task_id: {task.get('task_id')}",
+        f"repo_hint: {task.get('repo_hint') or 'unknown'}",
+        f"dataset: {task.get('dataset') or task.get('dataset_name') or 'unknown'}",
+    ]
+    if task.get("base_commit"):
+        lines.append(f"base_commit: {task['base_commit']}")
+    if task.get("problem_statement"):
+        lines.append("")
+        lines.append("problem_statement:")
+        lines.append(str(task["problem_statement"]))
+    return clip_text("\n".join(lines), max_chars)
+
+
+def compact_evidence(first_pass_dir: Optional[Path], max_chars: int) -> tuple[str, dict]:
+    metadata = {
+        "path": str(first_pass_dir) if first_pass_dir else None,
+        "truncated": False,
+        "warnings": [],
+    }
+    if not first_pass_dir:
+        metadata["warnings"].append("missing:first_pass_panda_output_dir")
+        return "First-pass Panda output dir was not provided.", metadata
+    evidence_path = first_pass_dir / "evidence.json"
+    evidence, warning = read_json_safe(evidence_path)
+    if warning:
+        metadata["warnings"].append(warning)
+        return f"Could not load first-pass evidence at {evidence_path}.", metadata
+    lines = [f"first_pass_evidence_path: {evidence_path}"]
+    for tool in REQUIRED_PANDA_TOOLS:
+        summary_path = first_pass_dir / f"{tool}.summary.json"
+        if summary_path.exists():
+            lines.append(f"{tool}_summary_path: {summary_path}")
+    lines.append("")
+    findings = evidence.get("findings", []) if isinstance(evidence, dict) else []
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+        lines.append(f"## {finding.get('tool', 'unknown')}")
+        lines.append(f"status: {finding.get('status')} timed_out: {finding.get('timed_out')}")
+        if finding.get("raw_output_path"):
+            lines.append(f"raw_output_path: {finding.get('raw_output_path')}")
+        for key in ("recommendation", "alternative", "risks", "verification_plan"):
+            value = finding.get(key)
+            if value:
+                clipped, was_truncated = clip_text(str(value), 1200)
+                metadata["truncated"] = metadata["truncated"] or was_truncated
+                lines.append(f"{key}:")
+                lines.append(clipped)
+        warnings = finding.get("warnings")
+        if warnings:
+            lines.append(f"warnings: {json.dumps(warnings)}")
+        lines.append("")
+    text, was_truncated = clip_text("\n".join(lines).strip(), max_chars)
+    metadata["truncated"] = metadata["truncated"] or was_truncated
+    return text, metadata
+
+
+def compact_patch(path: Optional[Path], max_chars: int, max_changed_lines: int) -> tuple[str, dict]:
+    metadata = {
+        "path": str(path) if path else None,
+        "truncated": False,
+        "changed_line_limit": max_changed_lines,
+        "warnings": [],
+    }
+    if not path:
+        metadata["warnings"].append("missing:patch_path")
+        return "Candidate patch path was not provided.", metadata
+    text = read_text(path)
+    if not text:
+        metadata["warnings"].append(f"empty_or_missing:{path}")
+        return f"Candidate patch was empty or missing at {path}.", metadata
+    stats = patch_stats(text)
+    metadata.update(stats)
+    lines = [
+        f"patch_path: {path}",
+        f"changed_files: {stats['changed_file_count']}",
+        f"changed_lines: {stats['changed_line_count']}",
+        "",
+    ]
+    emitted_changed = 0
+    for line in text.splitlines():
+        is_changed = (line.startswith("+") and not line.startswith("+++")) or (
+            line.startswith("-") and not line.startswith("---")
+        )
+        is_header = (
+            line.startswith("diff --git")
+            or line.startswith("+++")
+            or line.startswith("---")
+            or line.startswith("@@")
+        )
+        if is_changed:
+            if emitted_changed >= max_changed_lines:
+                metadata["truncated"] = True
+                continue
+            emitted_changed += 1
+            lines.append(line)
+        elif is_header:
+            lines.append(line)
+    clipped, was_truncated = clip_text("\n".join(lines), max_chars)
+    metadata["truncated"] = metadata["truncated"] or was_truncated
+    metadata["emitted_changed_lines"] = emitted_changed
+    return clipped, metadata
+
+
+def extract_failing_tests(text: str) -> list[str]:
+    patterns = [
+        r"--- FAIL:\s+([A-Za-z0-9_./:-]+)",
+        r"=== RUN\s+([A-Za-z0-9_./:-]*Fail[A-Za-z0-9_./:-]*)",
+        r"\bFAILED\s+([A-Za-z0-9_./:-]+)",
+    ]
+    names = []
+    for pattern in patterns:
+        names.extend(re.findall(pattern, text))
+    lines = text.splitlines()
+    failure_marker = re.compile(r"(FAIL|FAILED|ERROR|Assertion|Traceback|panic)", re.IGNORECASE)
+    for idx, line in enumerate(lines):
+        match = re.match(r"^\s*Test:\s+([A-Za-z0-9_./:-]+)\s*$", line)
+        if not match:
+            continue
+        name = match.group(1)
+        if not (name.startswith("Test") or name.startswith("test_") or "::" in name):
+            continue
+        nearby = "\n".join(lines[max(0, idx - 3) : min(len(lines), idx + 4)])
+        if failure_marker.search(nearby):
+            names.append(name)
+    return sorted({name.strip() for name in names if name.strip()})
+
+
+def extract_path_hints(text: str) -> list[str]:
+    hints = set()
+    for match in re.findall(r"([A-Za-z0-9_./-]+\.(?:go|py|js|jsx|ts|tsx|rb|rs|java)):\d+", text):
+        hints.add(match)
+    for match in re.findall(r"\bFAIL\s+([A-Za-z0-9_./-]+)", text):
+        if "/" in match or "." in match:
+            hints.add(match)
+    return sorted(hints)
+
+
+def focused_failure_excerpt(text: str, max_chars: int, context_lines: int) -> tuple[str, bool]:
+    if not text:
+        return "", False
+    lines = text.splitlines()
+    interesting = []
+    marker = re.compile(
+        r"(FAIL|FAILED|ERROR|panic|Traceback|Exception|Assertion|timeout|timed out|Missing Region|Target error|--- FAIL)",
+        re.IGNORECASE,
+    )
+    for idx, line in enumerate(lines):
+        if marker.search(line):
+            start = max(0, idx - context_lines)
+            end = min(len(lines), idx + context_lines + 1)
+            interesting.extend(range(start, end))
+    if not interesting:
+        interesting = list(range(min(len(lines), 80)))
+    selected = []
+    previous = None
+    for idx in sorted(set(interesting)):
+        if previous is not None and idx > previous + 1:
+            selected.append("...")
+        selected.append(lines[idx])
+        previous = idx
+    return clip_text("\n".join(selected), max_chars)
+
+
+def compact_test_output(path: Optional[Path], max_chars: int) -> tuple[str, dict]:
+    metadata = {
+        "path": str(path) if path else None,
+        "truncated": False,
+        "failing_tests": [],
+        "path_hints": [],
+        "warnings": [],
+    }
+    if not path:
+        metadata["warnings"].append("missing:test_output_path")
+        return "Failed test output path was not provided.", metadata
+    text = read_text(path)
+    if not text:
+        metadata["warnings"].append(f"empty_or_missing:{path}")
+        return f"Failed test output was empty or missing at {path}.", metadata
+    metadata["failing_tests"] = extract_failing_tests(text)
+    metadata["path_hints"] = extract_path_hints(text)
+    excerpt, was_truncated = focused_failure_excerpt(
+        text,
+        max_chars=max_chars,
+        context_lines=SECOND_PASS_FAILURE_CONTEXT_LINES,
+    )
+    metadata["truncated"] = was_truncated
+    header = [
+        f"test_output_path: {path}",
+        f"failing_tests: {json.dumps(metadata['failing_tests'])}",
+        f"path_hints: {json.dumps(metadata['path_hints'])}",
+        "",
+        "focused_failure_excerpt:",
+        excerpt,
+    ]
+    return "\n".join(header), metadata
+
+
+def resolve_second_pass_inputs(args: argparse.Namespace) -> dict:
+    run_dir = args.run_dir.expanduser()
+    first_record = load_result_record(run_dir, args.task_id, REPLAY_VARIANT) or {}
+    first_pass_dir = args.first_pass_panda_output_dir or (
+        Path(first_record["panda_output_dir"]) if first_record.get("panda_output_dir") else None
+    )
+    patch_path = args.patch_path or (
+        Path(first_record["patch_path"]) if first_record.get("patch_path") else None
+    )
+    test_output_path = args.test_output_path or (
+        Path(first_record["test_output_path"]) if first_record.get("test_output_path") else None
+    )
+    output_dir = args.output_dir or result_dir(run_dir, args.task_id, SECOND_PASS_VARIANT)
+    return {
+        "run_dir": run_dir,
+        "first_record": first_record,
+        "first_pass_dir": first_pass_dir.expanduser() if first_pass_dir else None,
+        "patch_path": patch_path.expanduser() if patch_path else None,
+        "test_output_path": test_output_path.expanduser() if test_output_path else None,
+        "output_dir": output_dir.expanduser(),
+        "workspace": args.workspace.expanduser() if args.workspace else None,
+    }
+
+
+def build_second_pass_prompt(args: argparse.Namespace) -> tuple[str, dict]:
+    inputs = resolve_second_pass_inputs(args)
+    task, task_warnings = load_task_context(inputs["run_dir"], args.task_id)
+    task_text, task_truncated = compact_task_context(task, SECOND_PASS_TASK_MAX_CHARS)
+    evidence_text, evidence_meta = compact_evidence(inputs["first_pass_dir"], SECOND_PASS_EVIDENCE_MAX_CHARS)
+    patch_text, patch_meta = compact_patch(
+        inputs["patch_path"],
+        SECOND_PASS_PATCH_MAX_CHARS,
+        SECOND_PASS_PATCH_MAX_LINES,
+    )
+    test_text, test_meta = compact_test_output(inputs["test_output_path"], SECOND_PASS_TEST_MAX_CHARS)
+    first_record = inputs["first_record"]
+    first_result = {
+        "classification": first_record.get("classification"),
+        "accepted": first_record.get("accepted"),
+        "panda_run_failed": first_record.get("panda_run_failed"),
+        "claude_budget_failure": first_record.get("claude_budget_failure"),
+        "notes": first_record.get("notes"),
+    }
+    gating_warnings = []
+    if not first_record:
+        gating_warnings.append("missing:first_pass_replay_result")
+    elif first_record.get("panda_run_failed"):
+        gating_warnings.append("first_pass_panda_run_failed")
+    elif first_record.get("accepted"):
+        gating_warnings.append("first_pass_already_accepted")
+    if not inputs["patch_path"]:
+        gating_warnings.append("missing:candidate_patch")
+    if not inputs["test_output_path"]:
+        gating_warnings.append("missing:failed_test_output")
+    prompt = f"""You are advising Codex as an independent Panda collaborator in a second-pass recovery review.
+
+Goal:
+- Identify what the first Panda pass missed after Codex implemented a candidate patch and verification failed.
+- Focus on the exact API, test, hidden-contract, synchronization, or behavioral assumption violated by the current patch.
+- Codex remains the only editor. Inspect and advise only.
+
+Core question:
+- What did the first Panda pass miss, and what exact API/test contract does this patch violate?
+
+Rules:
+- Do not edit files.
+- Do not inspect or request gold benchmark patch or test_patch content.
+- Use compact evidence first; raw artifact paths are provided only when exact details are needed.
+- Treat hidden-test details inferred from failure output as uncertain unless the local repo confirms them.
+
+Task context:
+{task_text}
+
+First-pass Panda replay result:
+{json.dumps(first_result, indent=2)}
+
+First-pass Panda evidence summary and artifact paths:
+{evidence_text}
+
+Codex candidate patch summary:
+{patch_text}
+
+Failed verification output:
+{test_text}
+
+Please return:
+- Recommendation: the smallest correction Codex should make.
+- Missed contract: what the first pass or current patch failed to satisfy.
+- Alternative worth considering.
+- Risks or edge cases.
+- Verification plan with the most focused tests/commands.
+"""
+    prompt, prompt_truncated = clip_text(prompt, 48000)
+    metadata = {
+        "schema_version": SCHEMA_VERSION,
+        "created_at": now_iso(),
+        "task_id": args.task_id,
+        "prompt_chars": len(prompt),
+        "prompt_truncated": prompt_truncated,
+        "input_paths": {
+            "run_dir": str(inputs["run_dir"]),
+            "first_pass_panda_output_dir": str(inputs["first_pass_dir"]) if inputs["first_pass_dir"] else None,
+            "patch_path": str(inputs["patch_path"]) if inputs["patch_path"] else None,
+            "test_output_path": str(inputs["test_output_path"]) if inputs["test_output_path"] else None,
+            "workspace": str(inputs["workspace"]) if inputs["workspace"] else None,
+        },
+        "sections": {
+            "task": {"truncated": task_truncated, "max_chars": SECOND_PASS_TASK_MAX_CHARS},
+            "evidence": {"truncated": evidence_meta["truncated"], "max_chars": SECOND_PASS_EVIDENCE_MAX_CHARS},
+            "patch": {
+                "truncated": patch_meta["truncated"],
+                "max_chars": SECOND_PASS_PATCH_MAX_CHARS,
+                "max_changed_lines": SECOND_PASS_PATCH_MAX_LINES,
+            },
+            "test_output": {"truncated": test_meta["truncated"], "max_chars": SECOND_PASS_TEST_MAX_CHARS},
+        },
+        "failing_tests": test_meta["failing_tests"],
+        "path_hints": test_meta["path_hints"],
+        "warnings": task_warnings
+        + evidence_meta["warnings"]
+        + patch_meta["warnings"]
+        + test_meta["warnings"]
+        + gating_warnings,
+    }
+    return prompt, metadata
+
+
+def prepare_second_pass(args: argparse.Namespace) -> int:
+    inputs = resolve_second_pass_inputs(args)
+    output_dir = inputs["output_dir"]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    prompt, metadata = build_second_pass_prompt(args)
+    prompt_path = output_dir / "panda_prompt.txt"
+    prompt_path.write_text(prompt, encoding="utf-8")
+    command = [
+        sys.executable,
+        str(consult_runner()),
+        "--tool",
+        args.tool,
+        "--mode",
+        "explore",
+        "--profile",
+        args.profile,
+        "--timeout",
+        str(args.timeout),
+        "--output-dir",
+        str(output_dir / "panda"),
+        "--prompt-file",
+        str(prompt_path),
+    ]
+    if inputs["workspace"]:
+        command.extend(["--workspace", str(inputs["workspace"])])
+    metadata["prompt_path"] = str(prompt_path)
+    metadata["command"] = command
+    write_json(output_dir / "prompt_metadata.json", metadata)
+    print(shlex.join(command))
+    return 0
+
+
 def inspect_panda_run(output_dir: Path, required_tools: Iterable[str] = REQUIRED_PANDA_TOOLS) -> dict:
     required = tuple(required_tools)
     artifact_failures = []
@@ -618,6 +1043,21 @@ def record_result(args: argparse.Namespace) -> int:
         "test_output_path": str(args.test_output_path) if args.test_output_path else None,
         "recorded_at": now_iso(),
     }
+    for field in ADVICE_QUALITY_FIELDS:
+        value = getattr(args, field, None)
+        if value is not None:
+            record[field] = bool(value)
+    second_pass_used = getattr(args, "second_pass_used", None)
+    if second_pass_used is not None:
+        record["second_pass_used"] = bool(second_pass_used)
+    elif args.variant == SECOND_PASS_VARIANT:
+        record["second_pass_used"] = True
+    second_pass_prompt_path = getattr(args, "second_pass_prompt_path", None)
+    if second_pass_prompt_path:
+        record["second_pass_prompt_path"] = str(second_pass_prompt_path)
+    advice_quality_notes = getattr(args, "advice_quality_notes", None)
+    if advice_quality_notes:
+        record["advice_quality_notes"] = advice_quality_notes
     if args.panda_output_dir:
         panda = inspect_panda_run(args.panda_output_dir.expanduser())
         record.update({
@@ -865,7 +1305,7 @@ def metric_summary(results: list[dict]) -> dict:
         panda_results = [
             result
             for result in variant_results
-            if variant in {"panda_explore", REPLAY_VARIANT}
+            if variant in PANDA_RESULT_VARIANTS
         ]
         panda_total = len(panda_results)
         panda_failed = sum(1 for result in panda_results if result.get("panda_run_failed"))
@@ -899,7 +1339,15 @@ def metric_summary(results: list[dict]) -> dict:
         and not result.get("contaminated")
         and not result.get("benchmark_invalid")
     ]
+    second_pass_results = [
+        result
+        for result in results
+        if result.get("variant") == SECOND_PASS_VARIANT
+        and not result.get("contaminated")
+        and not result.get("benchmark_invalid")
+    ]
     scout_by_task = {result.get("task_id"): result for result in scout_results}
+    replay_by_task = {result.get("task_id"): result for result in replay_results}
     struggle_task_ids = {
         result.get("task_id")
         for result in scout_results
@@ -910,17 +1358,49 @@ def metric_summary(results: list[dict]) -> dict:
         for result in replay_results
         if result.get("task_id") in struggle_task_ids
     ]
+    second_pass_denominator = [
+        result
+        for result in second_pass_results
+        if result.get("task_id") in struggle_task_ids
+        and result.get("task_id") in replay_by_task
+        and not replay_by_task[result.get("task_id")].get("accepted")
+    ]
     replay_accepted = sum(1 for result in replay_results if result.get("accepted"))
     replay_rescues = sum(1 for result in replay_denominator if result.get("accepted"))
     replay_panda_total = len(replay_results)
     replay_panda_failed = sum(1 for result in replay_results if result.get("panda_run_failed"))
     replay_claude_budget = sum(1 for result in replay_results if result.get("claude_budget_failure"))
     replay_evidence_used = sum(1 for result in replay_results if result.get("evidence_used"))
+    hard_local_panda_results = replay_results + second_pass_results
+    hard_local_panda_total = len(hard_local_panda_results)
+    hard_local_panda_failed = sum(1 for result in hard_local_panda_results if result.get("panda_run_failed"))
+    hard_local_claude_budget = sum(1 for result in hard_local_panda_results if result.get("claude_budget_failure"))
+    hard_local_evidence_used = sum(1 for result in hard_local_panda_results if result.get("evidence_used"))
     replay_times = [
         result.get("wall_seconds")
         for result in replay_results
         if result.get("accepted") and isinstance(result.get("wall_seconds"), (int, float))
     ]
+    second_pass_accepted = sum(1 for result in second_pass_results if result.get("accepted"))
+    second_pass_rescues = sum(1 for result in second_pass_denominator if result.get("accepted"))
+    incremental_second_pass_rescues = sum(
+        1
+        for result in second_pass_denominator
+        if result.get("accepted")
+    )
+    second_pass_panda_total = len(second_pass_results)
+    second_pass_panda_failed = sum(1 for result in second_pass_results if result.get("panda_run_failed"))
+    second_pass_claude_budget = sum(1 for result in second_pass_results if result.get("claude_budget_failure"))
+    second_pass_evidence_used = sum(1 for result in second_pass_results if result.get("evidence_used"))
+    advice_quality = {}
+    for field in ADVICE_QUALITY_FIELDS:
+        rated = [result for result in second_pass_results if isinstance(result.get(field), bool)]
+        true_count = sum(1 for result in rated if result.get(field))
+        advice_quality[field] = {
+            "rated_count": len(rated),
+            "true_count": true_count,
+            "true_rate": true_count / len(rated) if rated else None,
+        }
     hard_local = {
         "codex_scout_total": len(scout_results),
         "codex_scout_pass_rate": (
@@ -934,13 +1414,31 @@ def metric_summary(results: list[dict]) -> dict:
         "failure_to_success_rescue_rate": (
             replay_rescues / len(replay_denominator) if replay_denominator else None
         ),
+        "panda_replay_second_pass_total": len(second_pass_results),
+        "panda_replay_second_pass_pass_rate": (
+            second_pass_accepted / len(second_pass_results) if second_pass_results else None
+        ),
+        "second_pass_rescue_rate": (
+            second_pass_rescues / len(second_pass_denominator) if second_pass_denominator else None
+        ),
+        "incremental_second_pass_rescue_count": incremental_second_pass_rescues,
+        "second_pass_min_sample_met": len(second_pass_denominator) >= 5,
         "panda_runner_failure_rate": (
-            replay_panda_failed / replay_panda_total if replay_panda_total else None
+            hard_local_panda_failed / hard_local_panda_total if hard_local_panda_total else None
         ),
         "claude_budget_failure_rate": (
-            replay_claude_budget / replay_panda_total if replay_panda_total else None
+            hard_local_claude_budget / hard_local_panda_total if hard_local_panda_total else None
         ),
         "evidence_use_rate": (
+            hard_local_evidence_used / hard_local_panda_total if hard_local_panda_total else None
+        ),
+        "panda_replay_runner_failure_rate": (
+            replay_panda_failed / replay_panda_total if replay_panda_total else None
+        ),
+        "panda_replay_claude_budget_failure_rate": (
+            replay_claude_budget / replay_panda_total if replay_panda_total else None
+        ),
+        "panda_replay_evidence_use_rate": (
             replay_evidence_used / replay_panda_total if replay_panda_total else None
         ),
         "mean_time_to_green": (
@@ -951,6 +1449,22 @@ def metric_summary(results: list[dict]) -> dict:
         "replay_without_matching_scout_count": sum(
             1 for result in replay_results if result.get("task_id") not in scout_by_task
         ),
+        "second_pass_without_matching_scout_count": sum(
+            1 for result in second_pass_results if result.get("task_id") not in scout_by_task
+        ),
+        "second_pass_without_matching_replay_count": sum(
+            1 for result in second_pass_results if result.get("task_id") not in replay_by_task
+        ),
+        "second_pass_runner_failure_rate": (
+            second_pass_panda_failed / second_pass_panda_total if second_pass_panda_total else None
+        ),
+        "second_pass_claude_budget_failure_rate": (
+            second_pass_claude_budget / second_pass_panda_total if second_pass_panda_total else None
+        ),
+        "second_pass_evidence_use_rate": (
+            second_pass_evidence_used / second_pass_panda_total if second_pass_panda_total else None
+        ),
+        "advice_quality": advice_quality,
     }
     by_variant["hard_local"] = hard_local
     by_variant.update(hard_local)
@@ -1012,6 +1526,22 @@ def build_parser() -> argparse.ArgumentParser:
     canary_parser.add_argument("--skip-real-panda", action="store_true")
     canary_parser.set_defaults(func=run_canary)
 
+    second_pass_parser = subparsers.add_parser(
+        "prepare-second-pass",
+        help="Prepare a bounded Panda second-pass recovery prompt.",
+    )
+    second_pass_parser.add_argument("--run-dir", type=Path, default=default_run_dir("hard-local"))
+    second_pass_parser.add_argument("--task-id", required=True)
+    second_pass_parser.add_argument("--first-pass-panda-output-dir", type=Path)
+    second_pass_parser.add_argument("--patch-path", type=Path)
+    second_pass_parser.add_argument("--test-output-path", type=Path)
+    second_pass_parser.add_argument("--workspace", type=Path)
+    second_pass_parser.add_argument("--output-dir", type=Path)
+    second_pass_parser.add_argument("--tool", choices=("claude", "opencode", "qwen", "all"), default="all")
+    second_pass_parser.add_argument("--profile", default=DEFAULT_PROFILE)
+    second_pass_parser.add_argument("--timeout", type=int, default=HARD_LOCAL_TIMEOUT)
+    second_pass_parser.set_defaults(func=prepare_second_pass)
+
     record_parser = subparsers.add_parser("record", help="Record one task/variant result.")
     record_parser.add_argument("--run-dir", type=Path, default=default_run_dir())
     record_parser.add_argument("--task-id", required=True)
@@ -1028,6 +1558,13 @@ def build_parser() -> argparse.ArgumentParser:
     record_parser.add_argument("--patch-path", type=Path)
     record_parser.add_argument("--test-output-path", type=Path)
     record_parser.add_argument("--notes", default="")
+    record_parser.add_argument("--panda-direction-correct", type=bool_arg)
+    record_parser.add_argument("--panda-missed-contract", type=bool_arg)
+    record_parser.add_argument("--codex-implementation-error", type=bool_arg)
+    record_parser.add_argument("--evidence-was-actionable", type=bool_arg)
+    record_parser.add_argument("--second-pass-used", type=bool_arg)
+    record_parser.add_argument("--second-pass-prompt-path", type=Path)
+    record_parser.add_argument("--advice-quality-notes", default="")
     record_parser.set_defaults(func=record_result)
 
     summarize_parser = subparsers.add_parser("summarize", help="Summarize task results.")

@@ -12,7 +12,7 @@ python3 scripts/panda_eval.py init \
 
 Hard-local runs use:
 
-- variants: `codex_alone_scout`, `panda_replay`
+- variants: `codex_alone_scout`, `panda_replay`, `panda_replay_second_pass`
 - Panda timeout: 600 seconds
 - target candidate count: 20
 - max expanded candidate count: 30
@@ -137,7 +137,43 @@ python3 scripts/panda_eval.py record \
 
 Claude quota, budget, rate-limit, auth, billing, or usage exhaustion is a Panda failure. Stop replay after the first clear budget exhaustion and summarize the completed work.
 
-## 5. Summarize
+## 5. Second-Pass Recovery
+
+Use second pass only when the first Panda replay succeeded, Codex produced a patch, and verification failed. Prepare a bounded recovery prompt:
+
+```bash
+python3 scripts/panda_eval.py prepare-second-pass \
+  --run-dir /private/tmp/panda-eval/YYYYMMDD-hard-local \
+  --task-id TASK_ID \
+  --first-pass-panda-output-dir /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/TASK_ID/panda_replay/panda \
+  --patch-path /path/to/patch.diff \
+  --test-output-path /path/to/swebench-report-or-stdout.log \
+  --workspace /path/to/clean/task/repo
+```
+
+The command writes `panda_prompt.txt`, records prompt metadata, and prints the exact `consult_ai_team.py --mode explore` command to run. The prompt includes capped task context, first-pass evidence summaries, a capped patch excerpt, failing test names, and nearby error lines. It references artifact paths instead of embedding raw logs, and it must not include gold `patch` or `test_patch` content or hidden-test-derived hardness stats.
+
+Record second-pass results separately:
+
+```bash
+python3 scripts/panda_eval.py record \
+  --run-dir /private/tmp/panda-eval/YYYYMMDD-hard-local \
+  --task-id TASK_ID \
+  --variant panda_replay_second_pass \
+  --tests-passed false \
+  --accepted false \
+  --classification failed_tests \
+  --wall-seconds 900 \
+  --panda-output-dir /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/TASK_ID/panda_replay_second_pass/panda \
+  --second-pass-prompt-path /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/TASK_ID/panda_replay_second_pass/panda_prompt.txt \
+  --evidence-used \
+  --patch-path /path/to/patch.diff \
+  --test-output-path /path/to/swebench-report-or-stdout.log
+```
+
+Optional scoring fields can be added when the run is reviewed: `--panda-direction-correct`, `--panda-missed-contract`, `--codex-implementation-error`, `--evidence-was-actionable`, and `--advice-quality-notes`.
+
+## 6. Summarize
 
 ```bash
 python3 scripts/panda_eval.py summarize \
@@ -150,14 +186,25 @@ Hard-local metrics include:
 - `codex_struggle_count`
 - `panda_replay_pass_rate`
 - `failure_to_success_rescue_rate`
-- `panda_runner_failure_rate`
-- `claude_budget_failure_rate`
-- `evidence_use_rate`
+- `panda_replay_second_pass_pass_rate`
+- `second_pass_rescue_rate`
+- `incremental_second_pass_rescue_count`
+- `panda_runner_failure_rate` across first-pass replay and second-pass Panda runs
+- `claude_budget_failure_rate` across first-pass replay and second-pass Panda runs
+- `evidence_use_rate` across first-pass replay and second-pass Panda runs
+- `panda_replay_runner_failure_rate`
+- `panda_replay_claude_budget_failure_rate`
+- `panda_replay_evidence_use_rate`
+- `second_pass_runner_failure_rate`
+- `second_pass_claude_budget_failure_rate`
+- `second_pass_evidence_use_rate`
 - `mean_time_to_green`
 - `contaminated_task_count`
 
 Interpretation:
 
 - Panda is promising if it rescues at least 25% of clean Codex-struggle tasks.
+- Treat second-pass rescue metrics as exploratory until at least five clean Codex-struggle tasks have second-pass attempts after a matching first Panda replay failed to pass.
+- Do not count a second-pass success as an incremental rescue unless the same task has a matching first-pass `panda_replay` record that did not pass.
 - Panda is not proven better if Codex finds too few struggles, Panda only ties, or evidence is unused.
 - Runner reliability target is zero malformed/missing artifacts and under 10% runner failure rate.

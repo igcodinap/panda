@@ -67,7 +67,10 @@ class PandaEvalTests(unittest.TestCase):
             manifest = json.loads((Path(tmpdir) / "run_manifest.json").read_text(encoding="utf-8"))
             tasks = json.loads((Path(tmpdir) / "tasks.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["eval_mode"], "hard-local")
-            self.assertEqual(manifest["variants"], ["codex_alone_scout", "panda_replay"])
+            self.assertEqual(
+                manifest["variants"],
+                ["codex_alone_scout", "panda_replay", "panda_replay_second_pass"],
+            )
             self.assertEqual(manifest["panda"]["timeout"], panda_eval.HARD_LOCAL_TIMEOUT)
             self.assertEqual(tasks["tasks"], [])
 
@@ -288,11 +291,106 @@ class PandaEvalTests(unittest.TestCase):
             {
                 "task_id": "hard-a",
                 "variant": "panda_replay",
+                "accepted": False,
+                "classification": "failed_tests",
+                "contaminated": False,
+                "benchmark_invalid": False,
+                "wall_seconds": 200,
+                "panda_run_failed": False,
+                "claude_budget_failure": False,
+                "evidence_used": True,
+                "panda_direction_correct": False,
+            },
+            {
+                "task_id": "hard-a",
+                "variant": "panda_replay_second_pass",
                 "accepted": True,
                 "classification": "accepted",
                 "contaminated": False,
                 "benchmark_invalid": False,
-                "wall_seconds": 200,
+                "wall_seconds": 180,
+                "panda_run_failed": False,
+                "claude_budget_failure": False,
+                "evidence_used": True,
+                "panda_direction_correct": True,
+                "panda_missed_contract": True,
+                "codex_implementation_error": True,
+                "evidence_was_actionable": True,
+            },
+        ]
+
+        metrics = panda_eval.metric_summary(results)
+
+        self.assertEqual(metrics["codex_scout_pass_rate"], 0.5)
+        self.assertEqual(metrics["codex_struggle_count"], 1)
+        self.assertEqual(metrics["panda_replay_pass_rate"], 0.0)
+        self.assertEqual(metrics["failure_to_success_rescue_rate"], 0.0)
+        self.assertEqual(metrics["panda_replay_second_pass_pass_rate"], 1.0)
+        self.assertEqual(metrics["second_pass_rescue_rate"], 1.0)
+        self.assertEqual(metrics["incremental_second_pass_rescue_count"], 1)
+        self.assertEqual(metrics["evidence_use_rate"], 1.0)
+        self.assertEqual(metrics["contaminated_task_count"], 1)
+        self.assertEqual(metrics["advice_quality"]["panda_direction_correct"]["true_rate"], 1.0)
+
+    def test_hard_local_metrics_include_second_pass_runner_failures(self) -> None:
+        results = [
+            {
+                "task_id": "hard-a",
+                "variant": "codex_alone_scout",
+                "accepted": False,
+                "classification": "failed_tests",
+                "contaminated": False,
+                "benchmark_invalid": False,
+            },
+            {
+                "task_id": "hard-a",
+                "variant": "panda_replay",
+                "accepted": False,
+                "classification": "failed_tests",
+                "contaminated": False,
+                "benchmark_invalid": False,
+                "panda_run_failed": False,
+                "claude_budget_failure": False,
+                "evidence_used": True,
+            },
+            {
+                "task_id": "hard-a",
+                "variant": "panda_replay_second_pass",
+                "accepted": False,
+                "classification": "environment_failure",
+                "contaminated": False,
+                "benchmark_invalid": False,
+                "panda_run_failed": True,
+                "claude_budget_failure": True,
+                "evidence_used": False,
+            },
+        ]
+
+        metrics = panda_eval.metric_summary(results)
+
+        self.assertEqual(metrics["panda_runner_failure_rate"], 0.5)
+        self.assertEqual(metrics["claude_budget_failure_rate"], 0.5)
+        self.assertEqual(metrics["evidence_use_rate"], 0.5)
+        self.assertEqual(metrics["panda_replay_runner_failure_rate"], 0.0)
+        self.assertEqual(metrics["second_pass_runner_failure_rate"], 1.0)
+
+    def test_second_pass_rescue_requires_matching_failed_replay(self) -> None:
+        results = [
+            {
+                "task_id": "hard-a",
+                "variant": "codex_alone_scout",
+                "accepted": False,
+                "classification": "failed_tests",
+                "contaminated": False,
+                "benchmark_invalid": False,
+            },
+            {
+                "task_id": "hard-a",
+                "variant": "panda_replay_second_pass",
+                "accepted": True,
+                "classification": "accepted",
+                "contaminated": False,
+                "benchmark_invalid": False,
                 "panda_run_failed": False,
                 "claude_budget_failure": False,
                 "evidence_used": True,
@@ -301,12 +399,9 @@ class PandaEvalTests(unittest.TestCase):
 
         metrics = panda_eval.metric_summary(results)
 
-        self.assertEqual(metrics["codex_scout_pass_rate"], 0.5)
-        self.assertEqual(metrics["codex_struggle_count"], 1)
-        self.assertEqual(metrics["panda_replay_pass_rate"], 1.0)
-        self.assertEqual(metrics["failure_to_success_rescue_rate"], 1.0)
-        self.assertEqual(metrics["evidence_use_rate"], 1.0)
-        self.assertEqual(metrics["contaminated_task_count"], 1)
+        self.assertIsNone(metrics["second_pass_rescue_rate"])
+        self.assertEqual(metrics["incremental_second_pass_rescue_count"], 0)
+        self.assertEqual(metrics["second_pass_without_matching_replay_count"], 1)
 
     def test_record_result_supports_new_variants_and_classification(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -357,16 +452,57 @@ class PandaEvalTests(unittest.TestCase):
                 str(panda_dir),
                 "--evidence-used",
             ])
+            second_prompt = run_dir / "second" / "panda_prompt.txt"
+            second_prompt.parent.mkdir()
+            second_prompt.write_text("prompt", encoding="utf-8")
+            second_args = panda_eval.build_parser().parse_args([
+                "record",
+                "--run-dir",
+                tmpdir,
+                "--task-id",
+                "hard-a",
+                "--variant",
+                "panda_replay_second_pass",
+                "--tests-passed",
+                "false",
+                "--accepted",
+                "false",
+                "--classification",
+                "failed_tests",
+                "--wall-seconds",
+                "180",
+                "--panda-output-dir",
+                str(panda_dir),
+                "--evidence-used",
+                "--second-pass-prompt-path",
+                str(second_prompt),
+                "--panda-direction-correct",
+                "true",
+                "--panda-missed-contract",
+                "true",
+                "--codex-implementation-error",
+                "false",
+                "--evidence-was-actionable",
+                "true",
+                "--advice-quality-notes",
+                "useful but incomplete",
+            ])
 
             with redirect_stdout(io.StringIO()):
                 panda_eval.record_result(scout_args)
                 panda_eval.record_result(replay_args)
+                panda_eval.record_result(second_args)
 
             results = json.loads((run_dir / "results.json").read_text(encoding="utf-8"))["results"]
             metrics = panda_eval.metric_summary(results)
             self.assertEqual(metrics["codex_struggle_count"], 1)
             self.assertEqual(metrics["failure_to_success_rescue_rate"], 1.0)
             self.assertFalse(results[1]["panda_run_failed"])
+            self.assertEqual(results[2]["variant"], "panda_replay_second_pass")
+            self.assertTrue(results[2]["second_pass_used"])
+            self.assertEqual(results[2]["second_pass_prompt_path"], str(second_prompt))
+            self.assertTrue(results[2]["panda_direction_correct"])
+            self.assertEqual(results[2]["advice_quality_notes"], "useful but incomplete")
 
     def test_select_hard_sanitizes_gold_content_and_enforces_repo_cap(self) -> None:
         long_problem = "Regression in behavior. " * 80
@@ -453,6 +589,154 @@ class PandaEvalTests(unittest.TestCase):
             self.assertTrue(inspection["panda_run_failed"])
             self.assertIn("malformed:manifest.json", inspection["artifact_failures"])
             self.assertIn("malformed:evidence.json", inspection["artifact_failures"])
+
+    def test_extract_failing_tests_skips_non_failure_test_log_lines(self) -> None:
+        text = "\n".join([
+            "INFO Test: setup_database",
+            "msg=Test: connection established",
+            "--- FAIL: TestStore_FetchWithECR (0.79s)",
+            "Error: not equal",
+            "Test: TestStore_FetchWithPrivateECR",
+            "FAILED tests/test_registry.py::test_private_ecr - AssertionError",
+        ])
+
+        names = panda_eval.extract_failing_tests(text)
+
+        self.assertIn("TestStore_FetchWithECR", names)
+        self.assertIn("TestStore_FetchWithPrivateECR", names)
+        self.assertIn("tests/test_registry.py::test_private_ecr", names)
+        self.assertNotIn("setup_database", names)
+        self.assertNotIn("connection", names)
+
+    def test_prepare_second_pass_builds_bounded_prompt_without_gold_content(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir)
+            task_id = "instance_flipt-io__flipt-96820c3ad10b0b2305e8877b6b303f7fafdf815f"
+            tasks = {
+                "schema_version": panda_eval.SCHEMA_VERSION,
+                "tasks": [
+                    {
+                        "task_id": task_id,
+                        "repo_hint": "flipt-io/flipt",
+                        "problem_statement": "AWS ECR credentials expire and public/private registries differ.",
+                        "patch": "GOLD_PATCH_SHOULD_NOT_APPEAR",
+                        "test_patch": "GOLD_TEST_PATCH_SHOULD_NOT_APPEAR",
+                        "hardness": {
+                            "score": 90,
+                            "patch_changed_files": 3,
+                            "patch_changed_lines": 44,
+                            "test_patch_changed_files": 2,
+                            "test_patch_changed_lines": 55,
+                            "fail_to_pass_count": 4,
+                        },
+                    }
+                ],
+            }
+            (run_dir / "tasks.json").write_text(json.dumps(tasks), encoding="utf-8")
+            first_pass = run_dir / "panda-first"
+            first_pass.mkdir()
+            evidence = {
+                "schema_version": panda_eval.SCHEMA_VERSION,
+                "findings": [
+                    {
+                        "tool": "claude",
+                        "status": "success",
+                        "timed_out": False,
+                        "recommendation": "Use CredentialsStore and defaultClientFunc.",
+                        "verification_plan": "Run TestStore_FetchWithECR.",
+                        "raw_output_path": str(first_pass / "claude.txt"),
+                    }
+                ],
+            }
+            (first_pass / "evidence.json").write_text(json.dumps(evidence), encoding="utf-8")
+            (first_pass / "claude.summary.json").write_text("{}", encoding="utf-8")
+            patch_path = run_dir / "patch.diff"
+            patch_path.write_text(
+                "diff --git a/internal/oci/ecr/ecr.go b/internal/oci/ecr/ecr.go\n"
+                + "\n".join(f"+line {idx}" for idx in range(260)),
+                encoding="utf-8",
+            )
+            test_output = run_dir / "stdout.log"
+            test_output.write_text(
+                "\n".join([
+                    "=== RUN   TestStore_FetchWithECR",
+                    "/app/internal/oci/file_test.go:415: Missing Region",
+                    "--- FAIL: TestStore_FetchWithECR (0.79s)",
+                    "FAIL go.flipt.io/flipt/internal/oci",
+                ])
+                + "\n"
+                + ("noise\n" * 1000),
+                encoding="utf-8",
+            )
+            args = panda_eval.build_parser().parse_args([
+                "prepare-second-pass",
+                "--run-dir",
+                tmpdir,
+                "--task-id",
+                task_id,
+                "--first-pass-panda-output-dir",
+                str(first_pass),
+                "--patch-path",
+                str(patch_path),
+                "--test-output-path",
+                str(test_output),
+                "--workspace",
+                str(run_dir / "repo"),
+            ])
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                panda_eval.prepare_second_pass(args)
+
+            command = stdout.getvalue()
+            out_dir = run_dir / "tasks" / task_id / "panda_replay_second_pass"
+            prompt = (out_dir / "panda_prompt.txt").read_text(encoding="utf-8")
+            metadata = json.loads((out_dir / "prompt_metadata.json").read_text(encoding="utf-8"))
+            self.assertIn("--prompt-file", command)
+            self.assertIn("What did the first Panda pass miss", prompt)
+            self.assertIn("TestStore_FetchWithECR", prompt)
+            self.assertIn("internal/oci/file_test.go", prompt)
+            self.assertIn("CredentialsStore", prompt)
+            self.assertNotIn("GOLD_PATCH_SHOULD_NOT_APPEAR", prompt)
+            self.assertNotIn("GOLD_TEST_PATCH_SHOULD_NOT_APPEAR", prompt)
+            self.assertNotIn("hardness:", prompt)
+            self.assertNotIn("test_patch_changed", prompt)
+            self.assertNotIn("fail_to_pass_count", prompt)
+            self.assertTrue(metadata["sections"]["patch"]["truncated"])
+            self.assertIn("TestStore_FetchWithECR", metadata["failing_tests"])
+            self.assertTrue(any("internal/oci/file_test.go" in hint for hint in metadata["path_hints"]))
+
+    def test_prepare_second_pass_handles_missing_and_malformed_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir)
+            task_id = "hard-a"
+            (run_dir / "tasks.json").write_text(
+                json.dumps({"schema_version": panda_eval.SCHEMA_VERSION, "tasks": [{"task_id": task_id}]}),
+                encoding="utf-8",
+            )
+            first_pass = run_dir / "panda-first"
+            first_pass.mkdir()
+            (first_pass / "evidence.json").write_text("{", encoding="utf-8")
+            args = panda_eval.build_parser().parse_args([
+                "prepare-second-pass",
+                "--run-dir",
+                tmpdir,
+                "--task-id",
+                task_id,
+                "--first-pass-panda-output-dir",
+                str(first_pass),
+            ])
+
+            with redirect_stdout(io.StringIO()):
+                panda_eval.prepare_second_pass(args)
+
+            metadata = json.loads(
+                (run_dir / "tasks" / task_id / "panda_replay_second_pass" / "prompt_metadata.json")
+                .read_text(encoding="utf-8")
+            )
+            self.assertTrue(any("malformed" in warning for warning in metadata["warnings"]))
+            self.assertIn("missing:candidate_patch", metadata["warnings"])
+            self.assertIn("missing:failed_test_output", metadata["warnings"])
 
     def test_canary_skip_real_panda_uses_dry_run_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

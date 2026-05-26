@@ -58,6 +58,41 @@ Evidence:
 Please suggest likely root causes, how to distinguish them, and the smallest next diagnostic step.
 ```
 
+## Failure Recovery
+
+```text
+Goal:
+- Recover from a failed verification after Codex produced a candidate patch.
+
+First-pass advice:
+- ...
+
+Candidate patch summary:
+- ...
+
+Failure evidence:
+- Failing tests: ...
+- Error excerpts: ...
+- Relevant artifact paths: ...
+
+Please identify what the first pass missed, the smallest correction Codex should make, and the focused verification to rerun.
+```
+
+## API Contract Review
+
+```text
+Goal:
+- Check whether the candidate patch satisfies the repo's expected public API, test, or integration contract.
+
+Observed failure:
+- ...
+
+Relevant local files or package hints:
+- ...
+
+Please infer likely contract expectations from local evidence, call out uncertainty, and avoid relying on any gold benchmark patch or test_patch content.
+```
+
 ## Code Review
 
 ```text

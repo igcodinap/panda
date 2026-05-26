@@ -190,7 +190,7 @@ For deeper prompt patterns, read `references/prompt-patterns.md`.
 
 ## Evaluation
 
-Use `scripts/panda_eval.py` for nightly reliability and SWE-bench-style pilot runs. It creates run manifests, validates Panda artifacts, records `codex_alone` versus `panda_explore` results, and summarizes pass rate, Panda runner failure rate, Claude budget failure rate, evidence use rate, and time to green. For harder local comparisons, use hard-local mode with `codex_alone_scout` and `panda_replay` to measure failure-to-success rescue rate on Codex-struggle tasks. Treat Claude quota, budget, rate-limit, auth, billing, or usage exhaustion as a Panda failure. See `references/evaluation-nightly.md` and `references/evaluation-hard-local.md` for the runbooks.
+Use `scripts/panda_eval.py` for nightly reliability and SWE-bench-style pilot runs. It creates run manifests, validates Panda artifacts, records `codex_alone` versus `panda_explore` results, and summarizes pass rate, Panda runner failure rate, Claude budget failure rate, evidence use rate, and time to green. For harder local comparisons, use hard-local mode with `codex_alone_scout`, `panda_replay`, and optional `panda_replay_second_pass` to measure failure-to-success rescue rate on Codex-struggle tasks. Use `prepare-second-pass` after a successful first Panda replay when Codex produced a patch but tests or the official evaluator failed; it builds a bounded recovery prompt from first-pass evidence, the candidate patch, and failing output. Treat Claude quota, budget, rate-limit, auth, billing, or usage exhaustion as a Panda failure. See `references/evaluation-nightly.md` and `references/evaluation-hard-local.md` for the runbooks.
 
 ## Adaptive Reporting
 
