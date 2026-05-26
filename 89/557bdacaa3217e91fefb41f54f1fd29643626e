@@ -1,0 +1,58 @@
+references/evaluation-results/20260525-hard-local/navidrome-codex_alone_scout-result.json
+  s_11341de7cfb95b::t_505e5cf694348e 1-19
+references/evaluation-results/20260525-hard-local/canary_result.json
+  s_11341de7cfb95b::t_bf29173a52184a 1-140
+references/evaluation-hard-local.md
+  s_11341de7cfb95b::t_c8fe4cf196a385 1-163
+references/evaluation-findings.md
+  s_11341de7cfb95b::t_435ca94b523268 86-122,126-127
+  s_11341de7cfb95b::t_72f572da3fe999 84-85
+  s_11341de7cfb95b::t_83ff3a6660f158 1-83,128-136
+  s_11341de7cfb95b::t_57bcdf69c2c13b 123-125
+references/evaluation-nightly.md
+  s_11341de7cfb95b::t_5ab833c957ec2e 112-113
+  s_11341de7cfb95b::t_4a7b6539ae16fc 114-115
+  s_11341de7cfb95b::t_e948a093c601a6 1-111
+references/evaluation-results/20260525-hard-local/candidate_manifest.json
+  s_11341de7cfb95b::t_bf29173a52184a 1-57
+scripts/panda_eval.py
+  s_11341de7cfb95b::t_5b1707205a33e0 987-988,991,996-1006,1022-1024
+  s_11341de7cfb95b::t_874fc6a4b61cdd 1-19,42-43,45-47,59-60,66,68-69,71-117,120-121,124-151,153-156,163-168,429,432-433,438-439,444-445,447-449,451-454,456-460,464-466,478-596,602-608,612-648,650-651,670-836,855-864,870-887,957-986,989-990,992-995,1007-1021,1025-1046
+  s_11341de7cfb95b::t_12d85320b66fec 20-41,44,48-58
+  s_11341de7cfb95b::t_4d854a0853e84a 152,157-162,430-431,434-437,440-443,446,450,455,461-463,467-477
+  s_11341de7cfb95b::t_06dc393fa71c21 169-428
+  s_11341de7cfb95b::t_5e29c2af52a86f 597-601,609-611
+  s_11341de7cfb95b::t_73eea61651337b 865-869,888-956
+  s_11341de7cfb95b::t_15282ddecfa5ac 118-119,122-123
+  s_11341de7cfb95b::t_e70dbfcee087bd 649,652-669,837-854
+  s_11341de7cfb95b::t_9646042ccda37f 61-65,67,70
+references/evaluation-results/20260525-hard-local/flipt-codex_alone_scout-result.json
+  s_11341de7cfb95b::t_505e5cf694348e 1-19
+SKILL.md
+  s_11341de7cfb95b::t_d8ccda727a3b45 193
+  s_11341de7cfb95b::t_3a2f505569c192 191-192,194
+tests/test_panda_eval.py
+  s_11341de7cfb95b::t_f97793a863acce 137-142
+  s_11341de7cfb95b::t_c5eaf49a81ca69 182-231
+  s_11341de7cfb95b::t_9a558036483704 146-152,176,180
+  s_11341de7cfb95b::t_791a48e3884abf 1-18,40-52,91,95-136,143-145,153-175,177-179,181,232-257,456-481
+  s_11341de7cfb95b::t_82048a9431c597 19-39,53-90,92-94,258-455
+references/evaluation-results/20260525-hard-local/summary.json
+  s_11341de7cfb95b::t_bf29173a52184a 1-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "89557bdacaa3217e91fefb41f54f1fd29643626e",
+  "prompts": {},
+  "sessions": {
+    "s_11341de7cfb95b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e522c-432f-7803-8147-b257e34b4fee",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
