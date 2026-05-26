@@ -1,0 +1,46 @@
+scripts/panda_eval.py
+  s_11341de7cfb95b::t_f38e474c2736e9 24-33,61-66
+  s_11341de7cfb95b::t_e1e24eeb51b23d 532-688,701-816,828-834,838-894,897-928,930-932
+  s_11341de7cfb95b::t_fcc1a20135dd40 1046-1060
+  s_11341de7cfb95b::t_b9b9cc2b74f2fb 1365-1367,1374-1378,1389,1397
+  s_11341de7cfb95b::t_4f1a24cb6d6f94 1455-1457
+  s_11341de7cfb95b::t_b10f5021f74ba7 1427,1430,1433-1441
+  s_11341de7cfb95b::t_f2e1d75cd90fde 689-700
+  s_11341de7cfb95b::t_a2cca8b7cb7122 1529-1544,1561-1567
+  s_11341de7cfb95b::t_a16f9d8b5994bd 12,929
+  s_11341de7cfb95b::t_01fe2d30d06037 817-827,895-896
+  s_11341de7cfb95b::t_de1de23af8dc34 150-158
+  s_11341de7cfb95b::t_012181d8c8e710 835-837
+  s_11341de7cfb95b::t_a12bd977e736fb 1308,1342-1348,1350,1361-1363,1384-1388,1390-1396,1398-1403,1417-1425,1452-1454,1458-1467
+tests/test_panda_eval.py
+  s_11341de7cfb95b::t_227e3b86cb796e 624-631,702-704
+  s_11341de7cfb95b::t_c745de969e3546 593-610
+  s_11341de7cfb95b::t_042f6de89a9e63 611-623,632-701,705-706,708-740
+  s_11341de7cfb95b::t_06989f0442602d 707
+  s_11341de7cfb95b::t_147e7673ee2655 70-73,299-301,303-306,311,315-318,328-329,333,455-489,494,501-505
+  s_11341de7cfb95b::t_e9d2c3b2176bb0 294-295,302,326-327,330,334-404
+references/prompt-patterns.md
+  s_11341de7cfb95b::t_4aba1214cc8b51 61-95
+SKILL.md
+  s_11341de7cfb95b::t_c166a761311f7e 193
+references/evaluation-hard-local.md
+  s_11341de7cfb95b::t_66670c7da627d1 154
+  s_11341de7cfb95b::t_cbf2b893377316 15,140-153,155-176,189-191
+  s_11341de7cfb95b::t_be14a96fb6da28 192-200,207-208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "89f5db911b5d8fd11e1964f380bb1da7558c3557",
+  "prompts": {},
+  "sessions": {
+    "s_11341de7cfb95b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e522c-432f-7803-8147-b257e34b4fee",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
