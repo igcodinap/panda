@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "eval_mode": "hard-local",
+  "created_at": "2026-05-25T22:32:09.121581+00:00",
+  "panda_commit": "c4f025cd470f9b5dbe7d038c51fea936db963cf7",
+  "task_ids": [
+    "instance_ansible__ansible-e40889e7112ae00a21a2c74312b330e67a766cc0-v1055803c3a812189a1133297f7f5468579283f86",
+    "instance_ansible__ansible-4c5ce5a1a9e79a845aff4978cfeb72a0d4ecf7d6-v1055803c3a812189a1133297f7f5468579283f86",
+    "instance_ansible__ansible-811093f0225caa4dd33890933150a81c6a6d5226-v1055803c3a812189a1133297f7f5468579283f86",
+    "instance_element-hq__element-web-4fec436883b601a3cac2d4a58067e597f737b817-vnan",
+    "instance_element-hq__element-web-776ffa47641c7ec6d142ab4a47691c30ebf83c2e",
+    "instance_element-hq__element-web-aec454dd6feeb93000380523cbb0b3681c0275fd-vnan",
+    "instance_flipt-io__flipt-3ef34d1fff012140ba86ab3cafec8f9934b492be",
+    "instance_flipt-io__flipt-96820c3ad10b0b2305e8877b6b303f7fafdf815f",
+    "instance_flipt-io__flipt-e50808c03e4b9d25a6a78af9c61a3b1616ea356b",
+    "instance_internetarchive__openlibrary-b67138b316b1e9c11df8a4a8391fe5cc8e75ff9f-ve8c8d62a2b60610a3c4631f5f23ed866bada9818",
+    "instance_navidrome__navidrome-d0dceae0943b8df16e579c2d9437e11760a0626a",
+    "instance_protonmail__webclients-369fd37de29c14c690cb3b1c09a949189734026f",
+    "instance_qutebrowser__qutebrowser-3fd8e12949b8feda401930574facf09dd4180bba",
+    "instance_navidrome__navidrome-3982ba725883e71d4e3e618c61d5140eeb8d850a",
+    "instance_future-architect__vuls-1832b4ee3a20177ad313d806983127cb6e53f5cf",
+    "instance_future-architect__vuls-3c1489e588dacea455ccf4c352a3b1006902e2d4",
+    "instance_future-architect__vuls-6eff6a9329a65cc412e79b8f82444dfa3d0f0b5a",
+    "instance_gravitational__teleport-e6681abe6a7113cfd2da507f05581b7bdf398540-v626ec2a48416b10a88641359a169d99e935ff037",
+    "instance_protonmail__webclients-c6f65d205c401350a226bb005f42fac1754b0b5b",
+    "instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da"
+  ],
+  "variants": [
+    "codex_alone_scout",
+    "panda_replay"
+  ],
+  "panda": {
+    "mode": "explore",
+    "tool": "all",
+    "profile": "fast",
+    "timeout": 600,
+    "straggler_timeout": 120,
+    "claude_budget_failure_counts_as_failure": true
+  },
+  "success_bar": {
+    "reliability_canary_artifact_failures": 0,
+    "external_task_count": 20,
+    "stop_on_budget_exhaustion": true
+  },
+  "hard_local": {
+    "target_candidate_count": 20,
+    "expansion_candidate_count": 10,
+    "max_candidate_count": 30,
+    "repo_cap": 3,
+    "scout_budget_minutes": 20,
+    "max_test_loops": 3,
+    "panda_replay_limit": 8,
+    "primary_metric": "failure_to_success_rescue_rate"
+  },
+  "task_selection": {
+    "schema_version": 1,
+    "created_at": "2026-05-25T22:32:31.769409+00:00",
+    "source": "swebench_pro",
+    "dataset_name": "ScaleAI/SWE-bench_Pro",
+    "split": "test",
+    "allow_network": true,
+    "fallback_source_order": [
+      {
+        "source": "swebench_pro",
+        "dataset_name": "ScaleAI/SWE-bench_Pro",
+        "split": "test"
+      },
+      {
+        "source": "swebench_full",
+        "dataset_name": "princeton-nlp/SWE-bench",
+        "split": "test"
+      },
+      {
+        "source": "swebench_full",
+        "dataset_name": "SWE-bench/SWE-bench",
+        "split": "test"
+      },
+      {
+        "source": "swebench_verified",
+        "dataset_name": "SWE-bench/SWE-bench_Verified",
+        "split": "test"
+      },
+      {
+        "source": "swebench_verified",
+        "dataset_name": "princeton-nlp/SWE-bench_Verified",
+        "split": "test"
+      }
+    ],
+    "diagnostics": {
+      "records_seen": 731,
+      "records_scored": 731,
+      "selected_count": 20,
+      "target_count": 20,
+      "repo_cap": 3,
+      "rejected_obvious_count": 0,
+      "missing_task_id_count": 0,
+      "repo_counts": {
+        "ansible/ansible": 3,
+        "element-hq/element-web": 3,
+        "flipt-io/flipt": 3,
+        "internetarchive/openlibrary": 1,
+        "navidrome/navidrome": 3,
+        "protonmail/webclients": 2,
+        "qutebrowser/qutebrowser": 1,
+        "future-architect/vuls": 3,
+        "gravitational/teleport": 1
+      }
+    },
+    "warnings": [],
+    "gold_leakage_policy": "patch and test_patch content omitted; only numeric hardness metadata is written"
+  },
+  "canary": {
+    "ok": true,
+    "result_path": "/private/tmp/panda-eval/20260525-hard-local/canary/result.json",
+    "claude_budget_failure": false
+  },
+  "budget_failures": []
+}

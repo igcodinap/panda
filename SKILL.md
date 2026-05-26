@@ -188,6 +188,10 @@ For deeper prompt patterns, read `references/prompt-patterns.md`.
 - Runner manifests record `profile`, `profile_source`, `cost_tier`, profile-wide `effective_models`, launch-scoped `active_models`, `requested_tools`, `effective_effort`, `effort_support`, `applied_effort`, telemetry, artifact paths, and best-effort requested model/effort fields.
 - Treat usage metadata as best-effort unless the runner explicitly captures it for that run. When exact accounting matters, verify against the tool's native stats/export output.
 
+## Evaluation
+
+Use `scripts/panda_eval.py` for nightly reliability and SWE-bench-style pilot runs. It creates run manifests, validates Panda artifacts, records `codex_alone` versus `panda_explore` results, and summarizes pass rate, Panda runner failure rate, Claude budget failure rate, evidence use rate, and time to green. For harder local comparisons, use hard-local mode with `codex_alone_scout` and `panda_replay` to measure failure-to-success rescue rate on Codex-struggle tasks. Treat Claude quota, budget, rate-limit, auth, billing, or usage exhaustion as a Panda failure. See `references/evaluation-nightly.md` and `references/evaluation-hard-local.md` for the runbooks.
+
 ## Adaptive Reporting
 
 Use source attribution when external collaborators materially influenced the decision. Scale the report to the task instead of forcing one template.

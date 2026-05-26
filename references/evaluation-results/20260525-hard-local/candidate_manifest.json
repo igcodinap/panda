@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-05-25T22:32:31.769409+00:00",
+  "source": "swebench_pro",
+  "dataset_name": "ScaleAI/SWE-bench_Pro",
+  "split": "test",
+  "allow_network": true,
+  "fallback_source_order": [
+    {
+      "source": "swebench_pro",
+      "dataset_name": "ScaleAI/SWE-bench_Pro",
+      "split": "test"
+    },
+    {
+      "source": "swebench_full",
+      "dataset_name": "princeton-nlp/SWE-bench",
+      "split": "test"
+    },
+    {
+      "source": "swebench_full",
+      "dataset_name": "SWE-bench/SWE-bench",
+      "split": "test"
+    },
+    {
+      "source": "swebench_verified",
+      "dataset_name": "SWE-bench/SWE-bench_Verified",
+      "split": "test"
+    },
+    {
+      "source": "swebench_verified",
+      "dataset_name": "princeton-nlp/SWE-bench_Verified",
+      "split": "test"
+    }
+  ],
+  "diagnostics": {
+    "records_seen": 731,
+    "records_scored": 731,
+    "selected_count": 20,
+    "target_count": 20,
+    "repo_cap": 3,
+    "rejected_obvious_count": 0,
+    "missing_task_id_count": 0,
+    "repo_counts": {
+      "ansible/ansible": 3,
+      "element-hq/element-web": 3,
+      "flipt-io/flipt": 3,
+      "internetarchive/openlibrary": 1,
+      "navidrome/navidrome": 3,
+      "protonmail/webclients": 2,
+      "qutebrowser/qutebrowser": 1,
+      "future-architect/vuls": 3,
+      "gravitational/teleport": 1
+    }
+  },
+  "warnings": [],
+  "gold_leakage_policy": "patch and test_patch content omitted; only numeric hardness metadata is written"
+}

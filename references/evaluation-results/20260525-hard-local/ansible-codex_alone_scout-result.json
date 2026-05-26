@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "task_id": "instance_ansible__ansible-e40889e7112ae00a21a2c74312b330e67a766cc0-v1055803c3a812189a1133297f7f5468579283f86",
+  "variant": "codex_alone_scout",
+  "tests_passed": true,
+  "accepted": true,
+  "regression": false,
+  "classification": "accepted",
+  "contaminated": false,
+  "benchmark_invalid": false,
+  "wall_seconds": 2407.0,
+  "panda_run_failed": false,
+  "claude_budget_failure": false,
+  "evidence_used": false,
+  "notes": "Accepted by official SWE-bench Pro local Docker evaluator. Wall time measured conservatively from checkout creation and includes first-run harness setup/debugging; final evaluator pass took about 19 seconds.",
+  "patch_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_ansible__ansible-e40889e7112ae00a21a2c74312b330e67a766cc0-v1055803c3a812189a1133297f7f5468579283f86/codex_alone_scout/patch.diff",
+  "test_output_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_ansible__ansible-e40889e7112ae00a21a2c74312b330e67a766cc0-v1055803c3a812189a1133297f7f5468579283f86/codex_alone_scout/pro_eval/instance_ansible__ansible-e40889e7112ae00a21a2c74312b330e67a766cc0-v1055803c3a812189a1133297f7f5468579283f86/codex_alone_scout_stdout.log",
+  "recorded_at": "2026-05-25T23:16:05.264783+00:00"
+}
