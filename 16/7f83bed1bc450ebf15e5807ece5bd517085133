@@ -1,0 +1,132 @@
+pyproject.toml
+  s_cad106fb132cc7::t_089b4ec966c091 1-8,10-12
+  s_cad106fb132cc7::t_bde8523861f231 9
+src/panda_v2/prompts.py
+  s_cad106fb132cc7::t_089b4ec966c091 1-30,35-39,41-45,50-54,56-76
+  s_cad106fb132cc7::t_2697744a6252d8 31-32,46-47
+  s_cad106fb132cc7::t_764f9c6026097b 40,55
+  s_cad106fb132cc7::t_86d224a8de5a03 34,49
+  s_cad106fb132cc7::t_f2045fadf940f6 33,48
+tests/fixtures/v1/.gitkeep
+  s_cad106fb132cc7::t_9665e1b790b7c9 1
+tests/test_panda_v2.py
+  s_cad106fb132cc7::t_9665e1b790b7c9 1-18,20-21,23-62,75-87,92-98,194-234,285,293-308,347,350,367-368
+  s_cad106fb132cc7::t_eac177187d73e5 99-177,193,313-346
+  s_cad106fb132cc7::t_0a21f67e358af3 235-238,240-276,309-312
+  s_cad106fb132cc7::t_db747fe86f4b1b 22,88-91,178-192
+  s_cad106fb132cc7::t_e9f4445537d847 354-365
+  s_cad106fb132cc7::t_2c16a393b34ba1 19,63-74,239,277-284,286-292,348-349,351-353,366
+src/panda_v2/contracts.py
+  s_af11a840f35238::t_ef73ce31caed64 86-92,94-95,208-217,219
+  s_cad106fb132cc7::t_089b4ec966c091 1-24,34-85,93,96-139,193-199,201-207,218,220-226,235-254,262-267,269-275
+  s_cad106fb132cc7::t_26fca8bcdb327a 171-172
+  s_cad106fb132cc7::t_a3159fb6d7d2ef 227-234
+  s_cad106fb132cc7::t_c34947b97117a8 25-33,140-170,173-192,200,255-261,268
+src/panda_v2/__init__.py
+  s_cad106fb132cc7::t_089b4ec966c091 1-8
+scripts/consult_ai_team.py
+  s_cad106fb132cc7::t_0bf2cdd9fa81e5 882
+  s_cad106fb132cc7::t_89c0fae00c0fea 1392-1398,1403-1404,1423-1424
+  s_cad106fb132cc7::t_2867ac345e335b 164-168
+  s_cad106fb132cc7::t_ba48ffc638823b 1849,1889-1890
+  s_cad106fb132cc7::t_61e1460c0ee705 2010
+  s_cad106fb132cc7::t_9213b5a99ef5e0 1923-1929,1934-1935,1989-1990
+  s_cad106fb132cc7::t_b94c111b2d433c 28-35
+  s_cad106fb132cc7::t_ee847dfac2f443 44,55
+  s_cad106fb132cc7::t_fd4a0999c4620b 115
+  s_cad106fb132cc7::t_dbed22c8752173 101
+  s_cad106fb132cc7::t_0ed42a8eac58ee 725-741
+  s_cad106fb132cc7::t_a961cf99458a96 824,858-860
+  s_cad106fb132cc7::t_9924e9f9e2f8ea 368-374,378,400-402
+src/panda_v2/artifacts.py
+  s_cad106fb132cc7::t_089b4ec966c091 1-74
+src/panda_v2/extractors.py
+  s_cad106fb132cc7::t_6b2a0056330ce9 22,56-72,77
+  s_cad106fb132cc7::t_09270e6fb8a3a5 27-32,38,40-44
+  s_cad106fb132cc7::t_089b4ec966c091 1-9,11-19,23-26,33-35,211,214,221-224,227-272
+  s_cad106fb132cc7::t_50f8645ba9d4bf 10,20-21,36-37,39,45-55,73-76,78-210,212-213,215-220,225-226
+AGENTS.md
+  s_cad106fb132cc7::t_089b4ec966c091 1-12,18-35,37-45
+  s_cad106fb132cc7::t_472be492125128 13-17
+  s_cad106fb132cc7::t_9312d6a701f63d 36
+tests/fixtures/v1/first_pass_prompt.txt
+  s_cad106fb132cc7::t_f962227c792ad9 1-30
+tests/test_consult_ai_team.py
+  s_cad106fb132cc7::t_1a4d1478cd4311 281-282,284-289,291-295
+  s_cad106fb132cc7::t_7a20472b76a753 275-280,283,290,296-315
+  s_cad106fb132cc7::t_2f746c4c4c669e 85,88-91,137,568-645
+scripts/panda_eval.py
+  s_11341de7cfb95b::t_23c83fd2b3e83c 587-594,597-703,705-713,715-748,750-793
+  s_11341de7cfb95b::t_3a35da641f9c70 829-831
+  s_11341de7cfb95b::t_7cfd076e079523 833-835,838,841
+  s_11341de7cfb95b::t_6f3583dfc1013e 845-863,865-908,913-918,920-921,923-968,971-977
+  s_cad106fb132cc7::t_399f0d91d89e6e 909-911,919,969-970
+  s_11341de7cfb95b::t_b657af90190da0 565-572,749,864,1225
+  s_11341de7cfb95b::t_9f8e0eca76e807 912,922
+  s_11341de7cfb95b::t_a54f461474f059 1655-1661
+  s_cad106fb132cc7::t_8e85303d7c0958 1022-1071
+  s_11341de7cfb95b::t_72aab1ec4a5489 2145-2177,2179-2181,2196-2197,2231-2232
+  s_cad106fb132cc7::t_b74402764d072c 1394-1401,1404-1509,1519-1520,1529-1530,1536
+  s_11341de7cfb95b::t_02ad78ecea53b3 79,704,1316,1341
+  s_11341de7cfb95b::t_1a9af99263b718 714
+  s_11341de7cfb95b::t_c5e4498741a927 2013
+  s_cad106fb132cc7::t_92e35696b867af 21-28,80-82
+  s_cad106fb132cc7::t_9692127a953453 1402-1403
+  s_cad106fb132cc7::t_69bd600a5ddfe5 2178,2200-2214
+  s_11341de7cfb95b::t_8baf2e798733c2 8,595-596
+  s_11341de7cfb95b::t_2e3a8344f82cc2 1241-1250,1315,1323,1331,1346,1352-1353,1362-1375
+  s_11341de7cfb95b::t_2bf6d21a84dd0d 13,71-72,83-105
+tests/test_panda_eval.py
+  s_cad106fb132cc7::t_54f95b2881174c 1296-1305
+  s_11341de7cfb95b::t_1bcf385435cf71 668,818,851-852,931,935,963,1049,1253
+  s_cad106fb132cc7::t_616791b004763d 673,677,737
+  s_cad106fb132cc7::t_30dc8ebd22302f 710,1186
+  s_11341de7cfb95b::t_aef4a3851a97ae 169-172,186-190
+  s_11341de7cfb95b::t_074022a70ff3d7 630-667,669-672,674-676,680-696,786-817,819-850,853-869,873-888,890-891,966,1053,1064,1070-1092
+  s_11341de7cfb95b::t_64603ad4c1ff28 870-872,892-930,932-934,936-962,964-965
+  s_cad106fb132cc7::t_a60b0cb53bed45 1120-1130,1184-1185
+  s_cad106fb132cc7::t_1492ef51e9befd 1282-1295,1306-1307
+  s_cad106fb132cc7::t_573bf45c48cad7 746-785
+  s_cad106fb132cc7::t_1e8a001015b226 678-679,977,1054,1065
+  s_11341de7cfb95b::t_f52f8ebdb44078 626
+  s_cad106fb132cc7::t_e7252b3c908c61 1094-1119,1131-1183,1187-1190
+  s_11341de7cfb95b::t_71df1d1219107a 621-625,627-629
+  s_cad106fb132cc7::t_27c21143de7193 1191-1227
+  s_cad106fb132cc7::t_d9336463a3711f 697-709,711-736,738-745
+  s_11341de7cfb95b::t_93742008459ffc 342-343
+  s_11341de7cfb95b::t_d4662ecf9f203d 889
+tests/fixtures/v2/.gitkeep
+  s_cad106fb132cc7::t_9665e1b790b7c9 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "167f83bed1bc450ebf15e5807ece5bd517085133",
+  "prompts": {},
+  "sessions": {
+    "s_11341de7cfb95b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e522c-432f-7803-8147-b257e34b4fee",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    },
+    "s_af11a840f35238": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cef0dd4d-7eef-47a7-b4fb-71327e5c46c1",
+        "model": "unknown"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    },
+    "s_cad106fb132cc7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6b9b-e99e-7d11-bf1f-925c07843e9f",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
