@@ -166,6 +166,10 @@ class PandaEvalTests(unittest.TestCase):
                 "false",
                 "--wall-seconds",
                 "12.5",
+                "--workspace-metadata-path",
+                str(Path(tmpdir) / "workspace_metadata.json"),
+                "--workspace-isolated",
+                "true",
             ])
 
             with redirect_stdout(io.StringIO()):
@@ -179,6 +183,11 @@ class PandaEvalTests(unittest.TestCase):
             manifest = json.loads((Path(tmpdir) / "run_manifest.json").read_text(encoding="utf-8"))
             self.assertTrue(result["accepted"])
             self.assertEqual(result["wall_seconds"], 12.5)
+            self.assertTrue(result["workspace_preparation"]["workspace_isolated"])
+            self.assertEqual(
+                result["workspace_preparation"]["workspace_metadata_path"],
+                str(Path(tmpdir) / "workspace_metadata.json"),
+            )
             self.assertEqual(len(index["results"]), 1)
             self.assertEqual(manifest["budget_failures"], [])
 
@@ -330,7 +339,8 @@ class PandaEvalTests(unittest.TestCase):
         self.assertEqual(metrics["incremental_second_pass_rescue_count"], 1)
         self.assertEqual(metrics["evidence_use_rate"], 1.0)
         self.assertEqual(metrics["contaminated_task_count"], 1)
-        self.assertEqual(metrics["advice_quality"]["panda_direction_correct"]["true_rate"], 1.0)
+        self.assertEqual(metrics["advice_quality"]["panda_direction_correct"]["true_rate"], 0.5)
+        self.assertEqual(metrics["advice_quality"]["panda_direction_correct"]["rated_count"], 2)
 
     def test_hard_local_metrics_include_second_pass_runner_failures(self) -> None:
         results = [
@@ -608,6 +618,352 @@ class PandaEvalTests(unittest.TestCase):
         self.assertNotIn("setup_database", names)
         self.assertNotIn("connection", names)
 
+    def test_safe_path_slug_redacts_shas_without_colliding(self) -> None:
+        first = panda_eval.safe_path_slug("instance_flipt-io__flipt-" + ("a" * 40))
+        second = panda_eval.safe_path_slug("instance_flipt-io__flipt-" + ("b" * 40))
+
+        self.assertNotEqual(first, second)
+        self.assertIn("redacted-sha", first)
+        self.assertNotIn("a" * 40, first)
+        self.assertNotIn("b" * 40, second)
+
+    def test_prepare_first_pass_builds_contract_prompt_without_gold_content(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir)
+            workspace = run_dir / "workspace"
+            workspace.mkdir()
+            (workspace / "pkg.go").write_text("package main\n", encoding="utf-8")
+            task_id = "instance_repo__repo-" + ("a" * 40)
+            tasks = {
+                "schema_version": panda_eval.SCHEMA_VERSION,
+                "tasks": [
+                    {
+                        "task_id": task_id,
+                        "repo_hint": "owner/repo",
+                        "base_commit": "b" * 40,
+                        "problem_statement": "Users persist without Player.UserId.",
+                        "patch": "GOLD_PATCH_SHOULD_NOT_APPEAR",
+                        "test_patch": "GOLD_TEST_PATCH_SHOULD_NOT_APPEAR",
+                        "FAIL_TO_PASS": ["hidden_test_should_not_appear"],
+                        "hardness": {"score": 99, "fail_to_pass_count": 7},
+                    }
+                ],
+            }
+            (run_dir / "tasks.json").write_text(json.dumps(tasks), encoding="utf-8")
+            args = panda_eval.build_parser().parse_args([
+                "prepare-first-pass",
+                "--run-dir",
+                tmpdir,
+                "--task-id",
+                task_id,
+                "--workspace",
+                str(workspace),
+            ])
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                panda_eval.prepare_first_pass(args)
+
+            command = stdout.getvalue()
+            out_dir = panda_eval.safe_result_dir(run_dir, task_id, panda_eval.REPLAY_VARIANT)
+            prompt = (out_dir / "panda_prompt.txt").read_text(encoding="utf-8")
+            metadata = json.loads((out_dir / "prompt_metadata.json").read_text(encoding="utf-8"))
+            self.assertIn("--mode explore", command)
+            self.assertIn("--role implementation-review", command)
+            self.assertNotIn("--protocol v2", command)
+            self.assertIn("--prompt-file", command)
+            self.assertIn("--workspace", command)
+            self.assertIn("Contract map", prompt)
+            self.assertNotIn("Additional Panda V2 contract focus", prompt)
+            self.assertNotIn("panda_contracts_v2", prompt)
+            self.assertNotIn("unexported type names", prompt)
+            self.assertIn("Local evidence", prompt)
+            self.assertIn("Likely evaluator assertions", prompt)
+            self.assertIn("Falsifiers or uncertainties", prompt)
+            self.assertIn("Verification plan", prompt)
+            self.assertIn("Codex remains the only editor", prompt)
+            self.assertNotIn("GOLD_PATCH_SHOULD_NOT_APPEAR", prompt)
+            self.assertNotIn("GOLD_TEST_PATCH_SHOULD_NOT_APPEAR", prompt)
+            self.assertNotIn("hidden_test_should_not_appear", prompt)
+            self.assertNotIn("hardness", prompt)
+            self.assertNotIn("fail_to_pass_count", prompt)
+            self.assertNotIn("a" * 40, prompt)
+            self.assertNotIn("b" * 40, prompt)
+            self.assertEqual(metadata["prompt_kind"], "contract_first_first_pass")
+            self.assertEqual(metadata["prompt_version"], 1)
+            self.assertFalse(metadata["prompt_truncated"])
+            self.assertEqual(metadata["workspace_check"]["isolation_status"], "clean")
+
+    def test_prepare_first_pass_prompt_version_two_adds_protocol_v2(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir)
+            workspace = run_dir / "workspace"
+            workspace.mkdir()
+            task_id = "hard-a"
+            (run_dir / "tasks.json").write_text(
+                json.dumps({
+                    "schema_version": panda_eval.SCHEMA_VERSION,
+                    "tasks": [
+                        {
+                            "task_id": task_id,
+                            "repo_hint": "owner/repo",
+                            "base_commit": "c" * 40,
+                            "problem_statement": "Player identity mapping fails.",
+                        }
+                    ],
+                }),
+                encoding="utf-8",
+            )
+            args = panda_eval.build_parser().parse_args([
+                "prepare-first-pass",
+                "--run-dir",
+                tmpdir,
+                "--task-id",
+                task_id,
+                "--workspace",
+                str(workspace),
+                "--prompt-version",
+                "2",
+            ])
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                panda_eval.prepare_first_pass(args)
+
+            out_dir = panda_eval.safe_result_dir(run_dir, task_id, panda_eval.REPLAY_VARIANT)
+            prompt = (out_dir / "panda_prompt.txt").read_text(encoding="utf-8")
+            metadata = json.loads((out_dir / "prompt_metadata.json").read_text(encoding="utf-8"))
+            self.assertIn("--protocol v2", stdout.getvalue())
+            self.assertNotIn("contract-falsifier", stdout.getvalue())
+            self.assertIn("Additional Panda V2 contract focus", prompt)
+            self.assertIn("field names", prompt)
+            self.assertIn("unexported type names", prompt)
+            self.assertIn("backward-compatibility seams", prompt)
+            self.assertEqual(metadata["prompt_version"], 2)
+            self.assertIn("--protocol", metadata["command"])
+            self.assertIn("v2", metadata["command"])
+
+    def test_prepare_first_pass_prompt_version_one_matches_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir)
+            workspace = run_dir / "workspace"
+            workspace.mkdir()
+            task_id = "hard-a"
+            (run_dir / "tasks.json").write_text(
+                json.dumps({
+                    "schema_version": panda_eval.SCHEMA_VERSION,
+                    "tasks": [
+                        {
+                            "task_id": task_id,
+                            "repo_hint": "owner/repo",
+                            "problem_statement": "Player identity mapping fails.",
+                        }
+                    ],
+                }),
+                encoding="utf-8",
+            )
+            args = panda_eval.build_parser().parse_args([
+                "prepare-first-pass",
+                "--run-dir",
+                tmpdir,
+                "--task-id",
+                task_id,
+                "--workspace",
+                str(workspace),
+            ])
+
+            prompt, metadata = panda_eval.build_first_pass_prompt(args)
+
+            expected = (
+                Path(__file__).resolve().parent
+                / "fixtures"
+                / "v1"
+                / "first_pass_prompt.txt"
+            ).read_text(encoding="utf-8")
+            self.assertEqual(prompt, expected)
+            self.assertEqual(metadata["prompt_version"], 1)
+
+    def test_prepare_first_pass_respects_char_caps(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir)
+            workspace = run_dir / "workspace"
+            workspace.mkdir()
+            task_id = "hard-a"
+            (run_dir / "tasks.json").write_text(
+                json.dumps({
+                    "schema_version": panda_eval.SCHEMA_VERSION,
+                    "tasks": [
+                        {
+                            "task_id": task_id,
+                            "repo_hint": "owner/repo",
+                            "problem_statement": "x" * 20000,
+                        }
+                    ],
+                }),
+                encoding="utf-8",
+            )
+            args = panda_eval.build_parser().parse_args([
+                "prepare-first-pass",
+                "--run-dir",
+                tmpdir,
+                "--task-id",
+                task_id,
+                "--workspace",
+                str(workspace),
+            ])
+
+            with redirect_stdout(io.StringIO()):
+                panda_eval.prepare_first_pass(args)
+
+            out_dir = panda_eval.safe_result_dir(run_dir, task_id, panda_eval.REPLAY_VARIANT)
+            prompt = (out_dir / "panda_prompt.txt").read_text(encoding="utf-8")
+            metadata = json.loads((out_dir / "prompt_metadata.json").read_text(encoding="utf-8"))
+            self.assertLessEqual(len(prompt), panda_eval.FIRST_PASS_PROMPT_MAX_CHARS)
+            self.assertTrue(metadata["sections"]["task"]["truncated"])
+
+    def test_prepare_workspace_excludes_git_and_caches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            source = root / "source"
+            source.mkdir()
+            (source / ".git").mkdir()
+            nested = source / "submodule"
+            nested.mkdir()
+            (nested / ".git").write_text("gitdir: ../.git/modules/submodule", encoding="utf-8")
+            (source / "__pycache__").mkdir()
+            (source / "__pycache__" / "x.pyc").write_text("cache", encoding="utf-8")
+            (source / "node_modules").mkdir()
+            (source / "node_modules" / "pkg.js").write_text("cache", encoding="utf-8")
+            (source / "main.py").write_text("print('ok')\n", encoding="utf-8")
+            args = panda_eval.build_parser().parse_args([
+                "prepare-workspace",
+                "--run-dir",
+                str(root / "run"),
+                "--task-id",
+                "task-a",
+                "--source-workspace",
+                str(source),
+            ])
+
+            with redirect_stdout(io.StringIO()):
+                panda_eval.prepare_workspace(args)
+
+            destination = panda_eval.safe_task_dir(root / "run", "task-a") / "workspace"
+            metadata = json.loads((panda_eval.safe_task_dir(root / "run", "task-a") / "workspace_metadata.json").read_text(encoding="utf-8"))
+            self.assertTrue((destination / "main.py").exists())
+            self.assertFalse((destination / ".git").exists())
+            self.assertFalse((destination / "submodule" / ".git").exists())
+            self.assertFalse((destination / "__pycache__").exists())
+            self.assertFalse((destination / "node_modules").exists())
+            self.assertTrue(metadata["isolated"])
+            self.assertGreaterEqual(metadata["file_count"], 1)
+
+    def test_check_workspace_flags_leakage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace = Path(tmpdir) / "workspace"
+            workspace.mkdir()
+            (workspace / ".git").mkdir()
+            nested = workspace / "nested"
+            nested.mkdir()
+            (nested / ".git").write_text("gitdir: ../.git/modules/nested", encoding="utf-8")
+            (workspace / "task.json").write_text(json.dumps({"patch": "gold"}), encoding="utf-8")
+            subdir = workspace / "subdir"
+            subdir.mkdir()
+            (subdir / "meta.json").write_text(json.dumps({"test_patch": "gold"}), encoding="utf-8")
+            target_commit = "c" * 40
+            (workspace / "notes.txt").write_text(f"target {target_commit}", encoding="utf-8")
+            outside = Path(tmpdir) / "outside.txt"
+            outside.write_text("outside", encoding="utf-8")
+            (workspace / "outside-link").symlink_to(outside)
+
+            result = panda_eval.check_workspace_leakage(
+                workspace,
+                sensitive_strings=[target_commit],
+            )
+
+            violations = "\n".join(result["violations"])
+            self.assertFalse(result["isolated"])
+            self.assertIn("git_directory:.git", violations)
+            self.assertIn("git_file:nested/.git", violations)
+            self.assertIn("gold_benchmark_fields:task.json:patch", violations)
+            self.assertIn("gold_benchmark_fields:subdir/meta.json:test_patch", violations)
+            self.assertIn("sensitive_commit_string:notes.txt", violations)
+            self.assertIn("out_of_tree_symlink:outside-link", violations)
+
+    def test_prepare_first_and_second_pass_strict_workspace_raise_on_leakage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir)
+            workspace = run_dir / "workspace"
+            workspace.mkdir()
+            (workspace / ".git").mkdir()
+            task_id = "hard-a"
+            (run_dir / "tasks.json").write_text(
+                json.dumps({"schema_version": panda_eval.SCHEMA_VERSION, "tasks": [{"task_id": task_id}]}),
+                encoding="utf-8",
+            )
+            first_args = panda_eval.build_parser().parse_args([
+                "prepare-first-pass",
+                "--run-dir",
+                tmpdir,
+                "--task-id",
+                task_id,
+                "--workspace",
+                str(workspace),
+                "--strict-workspace",
+            ])
+            second_args = panda_eval.build_parser().parse_args([
+                "prepare-second-pass",
+                "--run-dir",
+                tmpdir,
+                "--task-id",
+                task_id,
+                "--workspace",
+                str(workspace),
+                "--strict-workspace",
+            ])
+
+            with self.assertRaises(SystemExit):
+                panda_eval.prepare_first_pass(first_args)
+            with self.assertRaises(SystemExit):
+                panda_eval.prepare_second_pass(second_args)
+
+            first_metadata = json.loads(
+                (panda_eval.safe_result_dir(run_dir, task_id, panda_eval.REPLAY_VARIANT) / "prompt_metadata.json")
+                .read_text(encoding="utf-8")
+            )
+            second_metadata = json.loads(
+                (panda_eval.safe_result_dir(run_dir, task_id, panda_eval.SECOND_PASS_VARIANT) / "prompt_metadata.json")
+                .read_text(encoding="utf-8")
+            )
+            self.assertTrue(first_metadata["strict_workspace_failed"])
+            self.assertTrue(second_metadata["strict_workspace_failed"])
+
+    def test_prepare_workspace_fails_on_out_of_tree_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            source = root / "source"
+            source.mkdir()
+            outside = root / "outside.txt"
+            outside.write_text("outside", encoding="utf-8")
+            (source / "outside-link").symlink_to(outside)
+            args = panda_eval.build_parser().parse_args([
+                "prepare-workspace",
+                "--run-dir",
+                str(root / "run"),
+                "--task-id",
+                "task-a",
+                "--source-workspace",
+                str(source),
+            ])
+
+            with self.assertRaises(SystemExit):
+                with redirect_stdout(io.StringIO()):
+                    panda_eval.prepare_workspace(args)
+
+            metadata = json.loads((panda_eval.safe_task_dir(root / "run", "task-a") / "workspace_metadata.json").read_text(encoding="utf-8"))
+            self.assertFalse(metadata["isolated"])
+            self.assertTrue(any("out_of_tree_symlink" in violation for violation in metadata["violations"]))
+
     def test_prepare_second_pass_builds_bounded_prompt_without_gold_content(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             run_dir = Path(tmpdir)
@@ -618,6 +974,7 @@ class PandaEvalTests(unittest.TestCase):
                     {
                         "task_id": task_id,
                         "repo_hint": "flipt-io/flipt",
+                        "base_commit": "b" * 40,
                         "problem_statement": "AWS ECR credentials expire and public/private registries differ.",
                         "patch": "GOLD_PATCH_SHOULD_NOT_APPEAR",
                         "test_patch": "GOLD_TEST_PATCH_SHOULD_NOT_APPEAR",
@@ -689,10 +1046,12 @@ class PandaEvalTests(unittest.TestCase):
                 panda_eval.prepare_second_pass(args)
 
             command = stdout.getvalue()
-            out_dir = run_dir / "tasks" / task_id / "panda_replay_second_pass"
+            out_dir = panda_eval.safe_result_dir(run_dir, task_id, panda_eval.SECOND_PASS_VARIANT)
             prompt = (out_dir / "panda_prompt.txt").read_text(encoding="utf-8")
             metadata = json.loads((out_dir / "prompt_metadata.json").read_text(encoding="utf-8"))
             self.assertIn("--prompt-file", command)
+            self.assertIn("--role debugging", command)
+            self.assertNotIn("--protocol v2", command)
             self.assertIn("What did the first Panda pass miss", prompt)
             self.assertIn("TestStore_FetchWithECR", prompt)
             self.assertIn("internal/oci/file_test.go", prompt)
@@ -702,9 +1061,169 @@ class PandaEvalTests(unittest.TestCase):
             self.assertNotIn("hardness:", prompt)
             self.assertNotIn("test_patch_changed", prompt)
             self.assertNotIn("fail_to_pass_count", prompt)
+            self.assertNotIn("96820c3ad10b0b2305e8877b6b303f7fafdf815f", prompt)
+            self.assertNotIn("b" * 40, prompt)
             self.assertTrue(metadata["sections"]["patch"]["truncated"])
             self.assertIn("TestStore_FetchWithECR", metadata["failing_tests"])
             self.assertTrue(any("internal/oci/file_test.go" in hint for hint in metadata["path_hints"]))
+
+    def test_prepare_second_pass_role_override_works(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir)
+            task_id = "hard-a"
+            (run_dir / "tasks.json").write_text(
+                json.dumps({"schema_version": panda_eval.SCHEMA_VERSION, "tasks": [{"task_id": task_id}]}),
+                encoding="utf-8",
+            )
+            args = panda_eval.build_parser().parse_args([
+                "prepare-second-pass",
+                "--run-dir",
+                tmpdir,
+                "--task-id",
+                task_id,
+                "--role",
+                "code-review",
+            ])
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                panda_eval.prepare_second_pass(args)
+
+            self.assertIn("--role code-review", stdout.getvalue())
+
+    def test_prepare_falsifier_builds_one_pass_protocol_v2_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir)
+            task_id = "hard-a"
+            first_pass = run_dir / "first-pass"
+            first_pass.mkdir()
+            (first_pass / "evidence.json").write_text(
+                json.dumps({
+                    "schema_version": panda_eval.SCHEMA_VERSION,
+                    "findings": [
+                        {
+                            "tool": "qwen",
+                            "status": "success",
+                            "recommendation": "Use user_id.",
+                            "raw_output_path": str(first_pass / "qwen.txt"),
+                        }
+                    ],
+                }),
+                encoding="utf-8",
+            )
+            (first_pass / "panda_contracts.v2.json").write_text(
+                json.dumps({
+                    "schema_version": 1,
+                    "protocol_version": "v2",
+                    "artifact_kind": "contracts",
+                    "prompt_version": 2,
+                    "parse_quality": {
+                        "reports_total": 1,
+                        "parsed": 1,
+                        "missing": 0,
+                        "malformed": 0,
+                        "invalid": 0,
+                        "multiple": 0,
+                        "fallback_parsed": 0,
+                        "fallback_counts": {},
+                        "claims_total": 1,
+                    },
+                    "reports": [
+                        {
+                            "tool": "qwen",
+                            "parse_status": "parsed",
+                            "warnings": [],
+                            "files_inspected": ["model/player.go"],
+                            "claims": [
+                                {
+                                    "claim": "Player.UserId is the stable ownership key",
+                                    "status": "inferred",
+                                    "evidence_refs": ["model/player.go"],
+                                }
+                            ],
+                        }
+                    ],
+                }),
+                encoding="utf-8",
+            )
+            (run_dir / "tasks.json").write_text(
+                json.dumps({
+                    "schema_version": panda_eval.SCHEMA_VERSION,
+                    "tasks": [
+                        {
+                            "task_id": task_id,
+                            "repo_hint": "owner/repo",
+                            "problem_statement": "Player identity mapping fails.",
+                        }
+                    ],
+                }),
+                encoding="utf-8",
+            )
+            args = panda_eval.build_parser().parse_args([
+                "prepare-falsifier",
+                "--run-dir",
+                tmpdir,
+                "--task-id",
+                task_id,
+                "--first-pass-panda-output-dir",
+                str(first_pass),
+            ])
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                panda_eval.prepare_falsifier(args)
+
+            out_dir = panda_eval.safe_result_dir(run_dir, task_id, panda_eval.FALSIFIER_VARIANT)
+            prompt = (out_dir / "panda_prompt.txt").read_text(encoding="utf-8")
+            metadata = json.loads((out_dir / "prompt_metadata.json").read_text(encoding="utf-8"))
+            command = stdout.getvalue()
+            self.assertIn("--role contract-falsifier", command)
+            self.assertIn("--protocol v2", command)
+            self.assertIn("one-pass Panda contract falsifier", prompt)
+            self.assertIn("Player.UserId is the stable ownership key", prompt)
+            self.assertNotIn("parse_quality", prompt)
+            self.assertNotIn("fallback_parsed", prompt)
+            self.assertNotIn("c" * 40, prompt)
+            self.assertEqual(metadata["prompt_kind"], "contract_falsifier")
+            self.assertEqual(metadata["prompt_version"], 2)
+            self.assertTrue(metadata["expected_artifact"].endswith("panda_falsifier.v2.json"))
+
+    def test_prepare_falsifier_missing_auto_contracts_path_uses_clean_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir)
+            task_id = "hard-a"
+            first_pass = run_dir / "first-pass"
+            first_pass.mkdir()
+            (first_pass / "evidence.json").write_text(
+                json.dumps({"schema_version": panda_eval.SCHEMA_VERSION, "findings": []}),
+                encoding="utf-8",
+            )
+            (run_dir / "tasks.json").write_text(
+                json.dumps({
+                    "schema_version": panda_eval.SCHEMA_VERSION,
+                    "tasks": [{"task_id": task_id, "problem_statement": "No contracts sidecar yet."}],
+                }),
+                encoding="utf-8",
+            )
+            args = panda_eval.build_parser().parse_args([
+                "prepare-falsifier",
+                "--run-dir",
+                tmpdir,
+                "--task-id",
+                task_id,
+                "--first-pass-panda-output-dir",
+                str(first_pass),
+            ])
+
+            with redirect_stdout(io.StringIO()):
+                panda_eval.prepare_falsifier(args)
+
+            out_dir = panda_eval.safe_result_dir(run_dir, task_id, panda_eval.FALSIFIER_VARIANT)
+            prompt = (out_dir / "panda_prompt.txt").read_text(encoding="utf-8")
+            metadata = json.loads((out_dir / "prompt_metadata.json").read_text(encoding="utf-8"))
+            self.assertIn("Panda V2 contracts artifact path was not provided.", prompt)
+            self.assertIn("missing:panda_contracts_v2_path", metadata["warnings"])
+            self.assertNotIn("Could not load Panda V2 contracts artifact", prompt)
 
     def test_prepare_second_pass_handles_missing_and_malformed_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -731,7 +1250,7 @@ class PandaEvalTests(unittest.TestCase):
                 panda_eval.prepare_second_pass(args)
 
             metadata = json.loads(
-                (run_dir / "tasks" / task_id / "panda_replay_second_pass" / "prompt_metadata.json")
+                (panda_eval.safe_result_dir(run_dir, task_id, panda_eval.SECOND_PASS_VARIANT) / "prompt_metadata.json")
                 .read_text(encoding="utf-8")
             )
             self.assertTrue(any("malformed" in warning for warning in metadata["warnings"]))
@@ -759,6 +1278,32 @@ class PandaEvalTests(unittest.TestCase):
             self.assertEqual(status, 0)
             self.assertTrue(result["ok"])
             self.assertTrue((Path(tmpdir) / "canary" / "panda-dry-run" / "evidence.json").exists())
+
+    def test_agents_md_has_required_sections_and_existing_top_level_paths(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "AGENTS.md").read_text(encoding="utf-8")
+        for section in [
+            "## Repo Map",
+            "## Edit Order",
+            "## V1 Compatibility Rules",
+            "## Artifact Rules",
+            "## Prompt Version Rules",
+            "## Test Expectations",
+        ]:
+            self.assertIn(section, text)
+        for path in ["SKILL.md", "scripts", "src/panda_v2", "tests", "references"]:
+            self.assertTrue((root / path).exists(), path)
+        for word in [
+            "schemas",
+            "extractors",
+            "prompts",
+            "artifacts",
+            "script integration",
+            "eval integration",
+            "docs",
+            "tests",
+        ]:
+            self.assertIn(word, text.lower())
 
 
 if __name__ == "__main__":

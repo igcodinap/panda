@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "panda"
+version = "0.1.0"
+description = "Panda local multi-core consultation runner and evaluation harness."
+requires-python = ">=3.9"
+
+[tool.setuptools.packages.find]
+where = ["src"]

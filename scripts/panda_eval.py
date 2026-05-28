@@ -5,16 +5,26 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import shlex
 import subprocess
 import sys
 import tempfile
 import time
 from typing import Iterable, Optional
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = REPO_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from panda_v2.contracts import CONTRACTS_FILENAME, FALSIFIER_FILENAME
+from panda_v2.prompts import contract_first_v2_addendum, falsifier_user_prompt
 
 
 SCHEMA_VERSION = 1
@@ -58,12 +68,41 @@ HARD_LOCAL_TARGET_COUNT = 20
 HARD_LOCAL_EXPANSION_COUNT = 10
 HARD_LOCAL_MAX_COUNT = 30
 HARD_LOCAL_REPO_CAP = 3
+FIRST_PASS_TASK_MAX_CHARS = 4000
+FIRST_PASS_PROMPT_MAX_CHARS = 32000
 SECOND_PASS_TASK_MAX_CHARS = 2000
 SECOND_PASS_EVIDENCE_MAX_CHARS = 8000
 SECOND_PASS_PATCH_MAX_CHARS = 8000
 SECOND_PASS_PATCH_MAX_LINES = 200
 SECOND_PASS_TEST_MAX_CHARS = 8000
 SECOND_PASS_FAILURE_CONTEXT_LINES = 3
+SECOND_PASS_PROMPT_MAX_CHARS = 48000
+FALSIFIER_CONTRACTS_MAX_CHARS = 12000
+FALSIFIER_PROMPT_MAX_CHARS = 48000
+FALSIFIER_VARIANT = "panda_falsifier"
+WORKSPACE_IGNORE_NAMES = frozenset({
+    ".git",
+    ".gitmodules",
+    ".hg",
+    ".svn",
+    "__pycache__",
+    ".cache",
+    ".gradle",
+    ".mypy_cache",
+    ".nox",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tox",
+    ".venv",
+    ".next",
+    ".turbo",
+    "coverage",
+    "node_modules",
+    "target",
+    "venv",
+})
+GOLD_BENCHMARK_FIELDS = frozenset({"patch", "test_patch", "FAIL_TO_PASS"})
+COMMIT_SHA_PATTERN = re.compile(r"\b[0-9a-f]{40}\b", re.IGNORECASE)
 HARD_DATASET_SOURCES = (
     ("swebench_pro", "ScaleAI/SWE-bench_Pro", "test"),
     ("swebench_full", "princeton-nlp/SWE-bench", "test"),
@@ -523,6 +562,14 @@ def result_dir(run_dir: Path, task_id: str, variant: str) -> Path:
     return run_dir / "tasks" / task_id / variant
 
 
+def safe_task_dir(run_dir: Path, task_id: str) -> Path:
+    return run_dir / "tasks" / safe_path_slug(task_id)
+
+
+def safe_result_dir(run_dir: Path, task_id: str, variant: str) -> Path:
+    return safe_task_dir(run_dir, task_id) / variant
+
+
 def read_text(path: Path) -> str:
     if not path.exists():
         return ""
@@ -535,6 +582,213 @@ def clip_text(text: str, max_chars: int) -> tuple[str, bool]:
     marker = "\n[truncated]\n"
     keep = max(0, max_chars - len(marker))
     return text[:keep].rstrip() + marker, True
+
+
+def redact_commit_shas(text: str) -> tuple[str, int]:
+    matches = COMMIT_SHA_PATTERN.findall(text)
+    return COMMIT_SHA_PATTERN.sub("[redacted-sha]", text), len(matches)
+
+
+def safe_path_slug(value: str) -> str:
+    redacted, _ = redact_commit_shas(value)
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", redacted).strip("._")
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:10]
+    return f"{slug or 'task'}-{digest}"
+
+
+def path_is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def workspace_ignore(_: str, names: list[str]) -> set[str]:
+    return {name for name in names if name in WORKSPACE_IGNORE_NAMES}
+
+
+def count_workspace_files(workspace: Path) -> tuple[int, int]:
+    file_count = 0
+    total_bytes = 0
+    for path in workspace.rglob("*"):
+        try:
+            stat = path.lstat()
+        except OSError:
+            continue
+        if path.is_dir() and not path.is_symlink():
+            continue
+        file_count += 1
+        total_bytes += stat.st_size
+    return file_count, total_bytes
+
+
+def sensitive_strings_for_task(task: dict) -> list[str]:
+    values = [task.get("task_id"), task.get("base_commit")]
+    strings = []
+    for value in values:
+        if isinstance(value, str):
+            strings.extend(COMMIT_SHA_PATTERN.findall(value))
+    return sorted(set(strings))
+
+
+def read_small_text_file(path: Path, max_bytes: int = 1_000_000) -> Optional[str]:
+    try:
+        if path.lstat().st_size > max_bytes:
+            return None
+        return path.read_text(encoding="utf-8", errors="replace")
+    except (OSError, UnicodeError):
+        return None
+
+
+def check_workspace_leakage(
+    workspace: Path,
+    *,
+    sensitive_strings: Optional[Iterable[str]] = None,
+) -> dict:
+    workspace = workspace.expanduser()
+    violations = []
+    warnings = []
+    sensitive = sorted({value for value in (sensitive_strings or []) if value})
+    checked_at = now_iso()
+
+    if not workspace.exists():
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "checked_at": checked_at,
+            "workspace": str(workspace),
+            "isolation_status": "missing",
+            "isolated": False,
+            "violations": [f"missing_workspace:{workspace}"],
+            "warnings": warnings,
+            "file_count": 0,
+            "byte_count": 0,
+            "sensitive_strings_checked": bool(sensitive),
+        }
+    if not workspace.is_dir():
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "checked_at": checked_at,
+            "workspace": str(workspace),
+            "isolation_status": "invalid",
+            "isolated": False,
+            "violations": [f"not_a_directory:{workspace}"],
+            "warnings": warnings,
+            "file_count": 0,
+            "byte_count": 0,
+            "sensitive_strings_checked": bool(sensitive),
+        }
+
+    root = workspace.resolve()
+    for git_path in workspace.rglob(".git"):
+        kind = "directory" if git_path.is_dir() else "file"
+        violations.append(f"git_{kind}:{git_path.relative_to(workspace)}")
+    for gitmodules_path in workspace.rglob(".gitmodules"):
+        violations.append(f"gitmodules_trace:{gitmodules_path.relative_to(workspace)}")
+
+    for path in workspace.rglob("*"):
+        if not path.is_symlink():
+            continue
+        try:
+            raw_target = os.readlink(path)
+        except OSError as exc:
+            violations.append(f"unreadable_symlink:{path.relative_to(workspace)}:{exc}")
+            continue
+        target_path = Path(raw_target)
+        if not target_path.is_absolute():
+            target_path = path.parent / target_path
+        resolved_target = target_path.resolve(strict=False)
+        if not path_is_relative_to(resolved_target, root):
+            violations.append(f"out_of_tree_symlink:{path.relative_to(workspace)}")
+
+    for json_path in workspace.rglob("*.json"):
+        data, warning = read_json_safe(json_path)
+        if warning:
+            warnings.append(warning)
+            continue
+        if not isinstance(data, dict):
+            continue
+        leaked_fields = sorted(GOLD_BENCHMARK_FIELDS.intersection(data.keys()))
+        if leaked_fields:
+            violations.append(
+                f"gold_benchmark_fields:{json_path.relative_to(workspace)}:{','.join(leaked_fields)}"
+            )
+
+    if sensitive:
+        for path in workspace.rglob("*"):
+            if not path.is_file() or path.is_symlink():
+                continue
+            text = read_small_text_file(path)
+            if text is None:
+                continue
+            for value in sensitive:
+                if value in text:
+                    violations.append(f"sensitive_commit_string:{path.relative_to(workspace)}")
+                    break
+
+    file_count, byte_count = count_workspace_files(workspace)
+    isolated = not violations
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "checked_at": checked_at,
+        "workspace": str(workspace),
+        "isolation_status": "clean" if isolated else "leakage_detected",
+        "isolated": isolated,
+        "violations": violations,
+        "warnings": warnings,
+        "file_count": file_count,
+        "byte_count": byte_count,
+        "sensitive_strings_checked": bool(sensitive),
+    }
+
+
+def prepare_workspace(args: argparse.Namespace) -> int:
+    run_dir = args.run_dir.expanduser()
+    source = args.source_workspace.expanduser()
+    destination = args.output_dir.expanduser() if args.output_dir else (
+        safe_task_dir(run_dir, args.task_id) / "workspace"
+    )
+    if not source.exists() or not source.is_dir():
+        raise SystemExit(f"Missing source workspace: {source}")
+    if destination.exists():
+        raise SystemExit(f"Destination workspace already exists: {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    ignored_patterns = sorted(WORKSPACE_IGNORE_NAMES)
+    shutil.copytree(source, destination, ignore=workspace_ignore, symlinks=True)
+    sensitive = [args.target_commit] if args.target_commit else []
+    leakage = check_workspace_leakage(destination, sensitive_strings=sensitive)
+    metadata = {
+        "schema_version": SCHEMA_VERSION,
+        "created_at": now_iso(),
+        "task_id": args.task_id,
+        "source_path": str(source),
+        "destination_path": str(destination),
+        "ignored_patterns": ignored_patterns,
+        "isolation_status": leakage["isolation_status"],
+        "isolated": leakage["isolated"],
+        "warnings": leakage["warnings"],
+        "violations": leakage["violations"],
+        "file_count": leakage["file_count"],
+        "byte_count": leakage["byte_count"],
+        "target_commit_checked": bool(args.target_commit),
+    }
+    metadata_path = destination.parent / "workspace_metadata.json"
+    write_json(metadata_path, metadata)
+    print(metadata_path)
+    if leakage["violations"]:
+        raise SystemExit("Workspace isolation check failed; see workspace_metadata.json.")
+    return 0
+
+
+def check_workspace_command(args: argparse.Namespace) -> int:
+    sensitive = [args.target_commit] if args.target_commit else []
+    result = check_workspace_leakage(args.workspace.expanduser(), sensitive_strings=sensitive)
+    if args.output_file:
+        write_json(args.output_file.expanduser(), result)
+        print(args.output_file.expanduser())
+    else:
+        print(json.dumps(result, indent=2))
+    return 1 if args.strict and result["violations"] else 0
 
 
 def load_result_record(run_dir: Path, task_id: str, variant: str) -> Optional[dict]:
@@ -572,18 +826,153 @@ def load_task_context(run_dir: Path, task_id: str) -> tuple[dict, list[str]]:
 
 
 def compact_task_context(task: dict, max_chars: int) -> tuple[str, bool]:
+    task_id, _ = redact_commit_shas(str(task.get("task_id")))
+    repo_hint, _ = redact_commit_shas(str(task.get("repo_hint") or "unknown"))
+    dataset, _ = redact_commit_shas(str(task.get("dataset") or task.get("dataset_name") or "unknown"))
     lines = [
+        f"task_id: {task_id}",
+        f"repo_hint: {repo_hint}",
+        f"dataset: {dataset}",
+    ]
+    if task.get("problem_statement"):
+        problem, _ = redact_commit_shas(str(task["problem_statement"]))
+        lines.append("")
+        lines.append("problem_statement:")
+        lines.append(problem)
+    return clip_text("\n".join(lines), max_chars)
+
+
+def compact_first_pass_task_context(task: dict, max_chars: int) -> tuple[str, dict]:
+    raw_lines = [
         f"task_id: {task.get('task_id')}",
         f"repo_hint: {task.get('repo_hint') or 'unknown'}",
         f"dataset: {task.get('dataset') or task.get('dataset_name') or 'unknown'}",
     ]
-    if task.get("base_commit"):
-        lines.append(f"base_commit: {task['base_commit']}")
     if task.get("problem_statement"):
-        lines.append("")
-        lines.append("problem_statement:")
-        lines.append(str(task["problem_statement"]))
-    return clip_text("\n".join(lines), max_chars)
+        raw_lines.extend(["", "problem_statement:", str(task["problem_statement"])])
+    redacted, redacted_count = redact_commit_shas("\n".join(raw_lines))
+    clipped, truncated = clip_text(redacted, max_chars)
+    return clipped, {
+        "truncated": truncated,
+        "max_chars": max_chars,
+        "redacted_sha_count": redacted_count,
+    }
+
+
+def resolve_first_pass_inputs(args: argparse.Namespace) -> dict:
+    run_dir = args.run_dir.expanduser()
+    output_dir = args.output_dir or safe_result_dir(run_dir, args.task_id, REPLAY_VARIANT)
+    return {
+        "run_dir": run_dir,
+        "output_dir": output_dir.expanduser(),
+        "workspace": args.workspace.expanduser(),
+    }
+
+
+def build_first_pass_prompt(args: argparse.Namespace) -> tuple[str, dict]:
+    inputs = resolve_first_pass_inputs(args)
+    task, task_warnings = load_task_context(inputs["run_dir"], args.task_id)
+    task_text, task_meta = compact_first_pass_task_context(task, FIRST_PASS_TASK_MAX_CHARS)
+    workspace_check = check_workspace_leakage(
+        inputs["workspace"],
+        sensitive_strings=sensitive_strings_for_task(task),
+    )
+    warnings = list(task_warnings) + workspace_check["warnings"]
+    if workspace_check["violations"]:
+        warnings.extend(f"workspace_leakage:{violation}" for violation in workspace_check["violations"])
+    prompt = f"""You are advising Codex as an independent Panda collaborator before Codex edits a benchmark task.
+
+Goal:
+- Inspect the local workspace and produce a contract-first implementation review for Codex.
+- Focus on API contracts, public/local tests, persistence or schema behavior, edge cases, and evaluator-like assertions.
+- Codex remains the only editor. Inspect and advise only.
+
+Rules:
+- Do not edit files.
+- Do not inspect or request gold benchmark patch, test_patch, FAIL_TO_PASS, target commit, or hidden test source.
+- Use only the task context below and evidence you can find in the provided workspace.
+- Treat any hidden-test expectation as an inference and label uncertainty clearly.
+
+Task context:
+{task_text}
+
+Please inspect the workspace and return:
+- Contract map: affected functions, types, endpoints, schemas, persisted fields, or integration boundaries.
+- Local evidence: public/local tests, fixtures, migrations, call sites, docs, and commands that support the contract map.
+- Likely evaluator assertions: what hidden or official tests may assert, phrased as inference from local evidence.
+- Recommendation: the smallest implementation direction Codex should take.
+- Alternative worth considering.
+- Risks or edge cases.
+- Falsifiers or uncertainties: what would prove this advice wrong.
+- Verification plan: focused tests or commands Codex should run.
+"""
+    prompt_version = getattr(args, "prompt_version", 1)
+    if prompt_version == 2:
+        prompt = f"{prompt}\n{contract_first_v2_addendum()}"
+    prompt, prompt_redacted_count = redact_commit_shas(prompt)
+    prompt, prompt_truncated = clip_text(prompt, FIRST_PASS_PROMPT_MAX_CHARS)
+    metadata = {
+        "schema_version": SCHEMA_VERSION,
+        "created_at": now_iso(),
+        "task_id": args.task_id,
+        "prompt_kind": "contract_first_first_pass",
+        "prompt_version": prompt_version,
+        "prompt_chars": len(prompt),
+        "prompt_truncated": prompt_truncated,
+        "redacted_sha_count": task_meta["redacted_sha_count"] + prompt_redacted_count,
+        "input_paths": {
+            "run_dir": str(inputs["run_dir"]),
+            "workspace": str(inputs["workspace"]),
+        },
+        "sections": {
+            "task": task_meta,
+            "prompt": {"max_chars": FIRST_PASS_PROMPT_MAX_CHARS},
+        },
+        "workspace_check": workspace_check,
+        "warnings": warnings,
+    }
+    if args.strict_workspace and workspace_check["violations"]:
+        metadata["strict_workspace_failed"] = True
+    return prompt, metadata
+
+
+def prepare_first_pass(args: argparse.Namespace) -> int:
+    inputs = resolve_first_pass_inputs(args)
+    output_dir = inputs["output_dir"]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    prompt, metadata = build_first_pass_prompt(args)
+    if args.strict_workspace and metadata["workspace_check"]["violations"]:
+        write_json(output_dir / "prompt_metadata.json", metadata)
+        raise SystemExit("Workspace leakage detected; refusing to prepare first-pass prompt.")
+    prompt_path = output_dir / "panda_prompt.txt"
+    prompt_path.write_text(prompt, encoding="utf-8")
+    command = [
+        sys.executable,
+        str(consult_runner()),
+        "--tool",
+        args.tool,
+        "--mode",
+        "explore",
+        "--role",
+        args.role,
+        "--profile",
+        args.profile,
+        "--timeout",
+        str(args.timeout),
+        "--output-dir",
+        str(output_dir / "panda"),
+        "--prompt-file",
+        str(prompt_path),
+        "--workspace",
+        str(inputs["workspace"]),
+    ]
+    if getattr(args, "prompt_version", 1) == 2:
+        command.extend(["--protocol", "v2"])
+    metadata["prompt_path"] = str(prompt_path)
+    metadata["command"] = command
+    write_json(output_dir / "prompt_metadata.json", metadata)
+    print(shlex.join(command))
+    return 0
 
 
 def compact_evidence(first_pass_dir: Optional[Path], max_chars: int) -> tuple[str, dict]:
@@ -624,6 +1013,56 @@ def compact_evidence(first_pass_dir: Optional[Path], max_chars: int) -> tuple[st
         warnings = finding.get("warnings")
         if warnings:
             lines.append(f"warnings: {json.dumps(warnings)}")
+        lines.append("")
+    text, was_truncated = clip_text("\n".join(lines).strip(), max_chars)
+    metadata["truncated"] = metadata["truncated"] or was_truncated
+    return text, metadata
+
+
+def compact_contracts_artifact(path: Optional[Path], max_chars: int) -> tuple[str, dict]:
+    metadata = {
+        "path": str(path) if path else None,
+        "truncated": False,
+        "warnings": [],
+    }
+    if not path:
+        metadata["warnings"].append("missing:panda_contracts_v2_path")
+        return "Panda V2 contracts artifact path was not provided.", metadata
+    data, warning = read_json_safe(path)
+    if warning:
+        metadata["warnings"].append(warning)
+        return f"Could not load Panda V2 contracts artifact at {path}.", metadata
+
+    lines = [f"panda_contracts_v2_path: {path}", ""]
+    reports = data.get("reports", []) if isinstance(data, dict) else []
+    for report in reports:
+        if not isinstance(report, dict):
+            continue
+        lines.append(f"## {report.get('tool', 'unknown')}")
+        lines.append(f"parse_status: {report.get('parse_status')}")
+        if report.get("warnings"):
+            lines.append(f"warnings: {json.dumps(report.get('warnings'))}")
+        files = report.get("files_inspected") or []
+        if files:
+            lines.append(f"files_inspected: {json.dumps(files[:20])}")
+        claims = report.get("claims") or []
+        for claim in claims[:40]:
+            if not isinstance(claim, dict):
+                continue
+            lines.append(
+                "- "
+                + json.dumps(
+                    {
+                        "claim": claim.get("claim"),
+                        "status": claim.get("status"),
+                        "evidence_refs": claim.get("evidence_refs") or [],
+                    },
+                    sort_keys=True,
+                )
+            )
+        if len(claims) > 40:
+            metadata["truncated"] = True
+            lines.append(f"... {len(claims) - 40} additional claims omitted")
         lines.append("")
     text, was_truncated = clip_text("\n".join(lines).strip(), max_chars)
     metadata["truncated"] = metadata["truncated"] or was_truncated
@@ -783,7 +1222,7 @@ def resolve_second_pass_inputs(args: argparse.Namespace) -> dict:
     test_output_path = args.test_output_path or (
         Path(first_record["test_output_path"]) if first_record.get("test_output_path") else None
     )
-    output_dir = args.output_dir or result_dir(run_dir, args.task_id, SECOND_PASS_VARIANT)
+    output_dir = args.output_dir or safe_result_dir(run_dir, args.task_id, SECOND_PASS_VARIANT)
     return {
         "run_dir": run_dir,
         "first_record": first_record,
@@ -799,6 +1238,16 @@ def build_second_pass_prompt(args: argparse.Namespace) -> tuple[str, dict]:
     inputs = resolve_second_pass_inputs(args)
     task, task_warnings = load_task_context(inputs["run_dir"], args.task_id)
     task_text, task_truncated = compact_task_context(task, SECOND_PASS_TASK_MAX_CHARS)
+    workspace_check = None
+    workspace_warnings = []
+    if inputs["workspace"]:
+        workspace_check = check_workspace_leakage(
+            inputs["workspace"],
+            sensitive_strings=sensitive_strings_for_task(task),
+        )
+        workspace_warnings = workspace_check["warnings"] + [
+            f"workspace_leakage:{violation}" for violation in workspace_check["violations"]
+        ]
     evidence_text, evidence_meta = compact_evidence(inputs["first_pass_dir"], SECOND_PASS_EVIDENCE_MAX_CHARS)
     patch_text, patch_meta = compact_patch(
         inputs["patch_path"],
@@ -863,13 +1312,15 @@ Please return:
 - Risks or edge cases.
 - Verification plan with the most focused tests/commands.
 """
-    prompt, prompt_truncated = clip_text(prompt, 48000)
+    prompt, prompt_redacted_count = redact_commit_shas(prompt)
+    prompt, prompt_truncated = clip_text(prompt, SECOND_PASS_PROMPT_MAX_CHARS)
     metadata = {
         "schema_version": SCHEMA_VERSION,
         "created_at": now_iso(),
         "task_id": args.task_id,
         "prompt_chars": len(prompt),
         "prompt_truncated": prompt_truncated,
+        "redacted_sha_count": prompt_redacted_count,
         "input_paths": {
             "run_dir": str(inputs["run_dir"]),
             "first_pass_panda_output_dir": str(inputs["first_pass_dir"]) if inputs["first_pass_dir"] else None,
@@ -877,6 +1328,7 @@ Please return:
             "test_output_path": str(inputs["test_output_path"]) if inputs["test_output_path"] else None,
             "workspace": str(inputs["workspace"]) if inputs["workspace"] else None,
         },
+        "workspace_check": workspace_check,
         "sections": {
             "task": {"truncated": task_truncated, "max_chars": SECOND_PASS_TASK_MAX_CHARS},
             "evidence": {"truncated": evidence_meta["truncated"], "max_chars": SECOND_PASS_EVIDENCE_MAX_CHARS},
@@ -886,15 +1338,19 @@ Please return:
                 "max_changed_lines": SECOND_PASS_PATCH_MAX_LINES,
             },
             "test_output": {"truncated": test_meta["truncated"], "max_chars": SECOND_PASS_TEST_MAX_CHARS},
+            "prompt": {"max_chars": SECOND_PASS_PROMPT_MAX_CHARS},
         },
         "failing_tests": test_meta["failing_tests"],
         "path_hints": test_meta["path_hints"],
         "warnings": task_warnings
+        + workspace_warnings
         + evidence_meta["warnings"]
         + patch_meta["warnings"]
         + test_meta["warnings"]
         + gating_warnings,
     }
+    if args.strict_workspace and workspace_check and workspace_check["violations"]:
+        metadata["strict_workspace_failed"] = True
     return prompt, metadata
 
 
@@ -903,6 +1359,9 @@ def prepare_second_pass(args: argparse.Namespace) -> int:
     output_dir = inputs["output_dir"]
     output_dir.mkdir(parents=True, exist_ok=True)
     prompt, metadata = build_second_pass_prompt(args)
+    if args.strict_workspace and metadata.get("workspace_check", {}).get("violations"):
+        write_json(output_dir / "prompt_metadata.json", metadata)
+        raise SystemExit("Workspace leakage detected; refusing to prepare second-pass prompt.")
     prompt_path = output_dir / "panda_prompt.txt"
     prompt_path.write_text(prompt, encoding="utf-8")
     command = [
@@ -912,6 +1371,8 @@ def prepare_second_pass(args: argparse.Namespace) -> int:
         args.tool,
         "--mode",
         "explore",
+        "--role",
+        args.role,
         "--profile",
         args.profile,
         "--timeout",
@@ -925,6 +1386,154 @@ def prepare_second_pass(args: argparse.Namespace) -> int:
         command.extend(["--workspace", str(inputs["workspace"])])
     metadata["prompt_path"] = str(prompt_path)
     metadata["command"] = command
+    write_json(output_dir / "prompt_metadata.json", metadata)
+    print(shlex.join(command))
+    return 0
+
+
+def resolve_falsifier_inputs(args: argparse.Namespace) -> dict:
+    run_dir = args.run_dir.expanduser()
+    first_record = load_result_record(run_dir, args.task_id, REPLAY_VARIANT) or {}
+    first_pass_dir = args.first_pass_panda_output_dir or (
+        Path(first_record["panda_output_dir"]) if first_record.get("panda_output_dir") else None
+    )
+    contracts_path = args.contracts_path
+    if contracts_path is None and first_pass_dir:
+        candidate = first_pass_dir / CONTRACTS_FILENAME
+        contracts_path = candidate if candidate.exists() else None
+    test_output_path = args.test_output_path or (
+        Path(first_record["test_output_path"]) if first_record.get("test_output_path") else None
+    )
+    output_dir = args.output_dir or safe_result_dir(run_dir, args.task_id, FALSIFIER_VARIANT)
+    return {
+        "run_dir": run_dir,
+        "first_record": first_record,
+        "first_pass_dir": first_pass_dir.expanduser() if first_pass_dir else None,
+        "contracts_path": contracts_path.expanduser() if contracts_path else None,
+        "test_output_path": test_output_path.expanduser() if test_output_path else None,
+        "output_dir": output_dir.expanduser(),
+        "workspace": args.workspace.expanduser() if args.workspace else None,
+    }
+
+
+def build_falsifier_prompt(args: argparse.Namespace) -> tuple[str, dict]:
+    inputs = resolve_falsifier_inputs(args)
+    task, task_warnings = load_task_context(inputs["run_dir"], args.task_id)
+    task_text, task_truncated = compact_task_context(task, SECOND_PASS_TASK_MAX_CHARS)
+    evidence_text, evidence_meta = compact_evidence(inputs["first_pass_dir"], SECOND_PASS_EVIDENCE_MAX_CHARS)
+    contracts_text, contracts_meta = compact_contracts_artifact(
+        inputs["contracts_path"],
+        FALSIFIER_CONTRACTS_MAX_CHARS,
+    )
+    test_text, test_meta = ("Failed verification output was not provided.", {
+        "path": None,
+        "truncated": False,
+        "failing_tests": [],
+        "path_hints": [],
+        "warnings": [],
+    })
+    if inputs["test_output_path"]:
+        test_text, test_meta = compact_test_output(inputs["test_output_path"], SECOND_PASS_TEST_MAX_CHARS)
+
+    prompt = f"""You are advising Codex as an independent Panda contract falsifier.
+
+Goal:
+- Audit concrete Panda V2 contract claims once, before Codex integrates them.
+- Focus only on exact API, field, method, type, endpoint, schema, test seam, foreign-key, synchronization, and backward-compatibility assumptions.
+- Codex remains the only editor and integrator.
+
+Rules:
+- Do not edit files.
+- Do not ask the original advisors to rebut your findings.
+- Do not vote, debate, or propose a full implementation plan.
+- Use contradictions only when local evidence directly conflicts with a claim.
+- Use unverifiable or not_found when available evidence cannot confirm the claim.
+
+Task context:
+{task_text}
+
+{falsifier_user_prompt()}
+
+Panda V2 contract artifact summary:
+{contracts_text}
+
+First-pass Panda evidence summary:
+{evidence_text}
+
+Optional failed verification output:
+{test_text}
+
+Please return:
+- Recommendation: how Codex should treat the audited claims.
+- Contradictions: exact claims contradicted by local evidence.
+- Unverifiable or not_found claims: exact claims Codex should verify before relying on them.
+- Verification plan: focused checks Codex should run.
+"""
+    prompt, prompt_redacted_count = redact_commit_shas(prompt)
+    prompt, prompt_truncated = clip_text(prompt, FALSIFIER_PROMPT_MAX_CHARS)
+    metadata = {
+        "schema_version": SCHEMA_VERSION,
+        "created_at": now_iso(),
+        "task_id": args.task_id,
+        "prompt_kind": "contract_falsifier",
+        "prompt_version": 2,
+        "prompt_chars": len(prompt),
+        "prompt_truncated": prompt_truncated,
+        "redacted_sha_count": prompt_redacted_count,
+        "input_paths": {
+            "run_dir": str(inputs["run_dir"]),
+            "first_pass_panda_output_dir": str(inputs["first_pass_dir"]) if inputs["first_pass_dir"] else None,
+            "contracts_path": str(inputs["contracts_path"]) if inputs["contracts_path"] else None,
+            "test_output_path": str(inputs["test_output_path"]) if inputs["test_output_path"] else None,
+            "workspace": str(inputs["workspace"]) if inputs["workspace"] else None,
+        },
+        "sections": {
+            "task": {"truncated": task_truncated, "max_chars": SECOND_PASS_TASK_MAX_CHARS},
+            "evidence": {"truncated": evidence_meta["truncated"], "max_chars": SECOND_PASS_EVIDENCE_MAX_CHARS},
+            "contracts": {"truncated": contracts_meta["truncated"], "max_chars": FALSIFIER_CONTRACTS_MAX_CHARS},
+            "test_output": {"truncated": test_meta["truncated"], "max_chars": SECOND_PASS_TEST_MAX_CHARS},
+            "prompt": {"max_chars": FALSIFIER_PROMPT_MAX_CHARS},
+        },
+        "warnings": task_warnings
+        + evidence_meta["warnings"]
+        + contracts_meta["warnings"]
+        + test_meta["warnings"],
+    }
+    return prompt, metadata
+
+
+def prepare_falsifier(args: argparse.Namespace) -> int:
+    inputs = resolve_falsifier_inputs(args)
+    output_dir = inputs["output_dir"]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    prompt, metadata = build_falsifier_prompt(args)
+    prompt_path = output_dir / "panda_prompt.txt"
+    prompt_path.write_text(prompt, encoding="utf-8")
+    command = [
+        sys.executable,
+        str(consult_runner()),
+        "--tool",
+        args.tool,
+        "--mode",
+        "explore",
+        "--role",
+        "contract-falsifier",
+        "--profile",
+        args.profile,
+        "--timeout",
+        str(args.timeout),
+        "--output-dir",
+        str(output_dir / "panda"),
+        "--prompt-file",
+        str(prompt_path),
+        "--protocol",
+        "v2",
+    ]
+    if inputs["workspace"]:
+        command.extend(["--workspace", str(inputs["workspace"])])
+    metadata["prompt_path"] = str(prompt_path)
+    metadata["command"] = command
+    metadata["expected_artifact"] = str(output_dir / "panda" / FALSIFIER_FILENAME)
     write_json(output_dir / "prompt_metadata.json", metadata)
     print(shlex.join(command))
     return 0
@@ -1043,6 +1652,13 @@ def record_result(args: argparse.Namespace) -> int:
         "test_output_path": str(args.test_output_path) if args.test_output_path else None,
         "recorded_at": now_iso(),
     }
+    workspace_isolated = getattr(args, "workspace_isolated", None)
+    workspace_metadata_path = getattr(args, "workspace_metadata_path", None)
+    if workspace_isolated is not None or workspace_metadata_path:
+        record["workspace_preparation"] = {
+            "workspace_isolated": bool(workspace_isolated) if workspace_isolated is not None else None,
+            "workspace_metadata_path": str(workspace_metadata_path) if workspace_metadata_path else None,
+        }
     for field in ADVICE_QUALITY_FIELDS:
         value = getattr(args, field, None)
         if value is not None:
@@ -1394,7 +2010,7 @@ def metric_summary(results: list[dict]) -> dict:
     second_pass_evidence_used = sum(1 for result in second_pass_results if result.get("evidence_used"))
     advice_quality = {}
     for field in ADVICE_QUALITY_FIELDS:
-        rated = [result for result in second_pass_results if isinstance(result.get(field), bool)]
+        rated = [result for result in hard_local_panda_results if isinstance(result.get(field), bool)]
         true_count = sum(1 for result in rated if result.get(field))
         advice_quality[field] = {
             "rated_count": len(rated),
@@ -1526,6 +2142,43 @@ def build_parser() -> argparse.ArgumentParser:
     canary_parser.add_argument("--skip-real-panda", action="store_true")
     canary_parser.set_defaults(func=run_canary)
 
+    workspace_parser = subparsers.add_parser(
+        "prepare-workspace",
+        help="Copy a benchmark workspace without git metadata or transient caches.",
+    )
+    workspace_parser.add_argument("--run-dir", type=Path, default=default_run_dir("hard-local"))
+    workspace_parser.add_argument("--task-id", required=True)
+    workspace_parser.add_argument("--source-workspace", type=Path, required=True)
+    workspace_parser.add_argument("--output-dir", type=Path)
+    workspace_parser.add_argument("--target-commit")
+    workspace_parser.set_defaults(func=prepare_workspace)
+
+    check_workspace_parser = subparsers.add_parser(
+        "check-workspace",
+        help="Check a Panda benchmark workspace for leakage risks.",
+    )
+    check_workspace_parser.add_argument("--workspace", type=Path, required=True)
+    check_workspace_parser.add_argument("--target-commit")
+    check_workspace_parser.add_argument("--output-file", type=Path)
+    check_workspace_parser.add_argument("--strict", action="store_true")
+    check_workspace_parser.set_defaults(func=check_workspace_command)
+
+    first_pass_parser = subparsers.add_parser(
+        "prepare-first-pass",
+        help="Prepare a bounded contract-first Panda replay prompt.",
+    )
+    first_pass_parser.add_argument("--run-dir", type=Path, default=default_run_dir("hard-local"))
+    first_pass_parser.add_argument("--task-id", required=True)
+    first_pass_parser.add_argument("--workspace", type=Path, required=True)
+    first_pass_parser.add_argument("--output-dir", type=Path)
+    first_pass_parser.add_argument("--tool", choices=("claude", "opencode", "qwen", "all"), default="all")
+    first_pass_parser.add_argument("--profile", default=DEFAULT_PROFILE)
+    first_pass_parser.add_argument("--timeout", type=int, default=HARD_LOCAL_TIMEOUT)
+    first_pass_parser.add_argument("--role", default="implementation-review")
+    first_pass_parser.add_argument("--prompt-version", type=int, choices=(1, 2), default=1)
+    first_pass_parser.add_argument("--strict-workspace", action="store_true")
+    first_pass_parser.set_defaults(func=prepare_first_pass)
+
     second_pass_parser = subparsers.add_parser(
         "prepare-second-pass",
         help="Prepare a bounded Panda second-pass recovery prompt.",
@@ -1540,7 +2193,25 @@ def build_parser() -> argparse.ArgumentParser:
     second_pass_parser.add_argument("--tool", choices=("claude", "opencode", "qwen", "all"), default="all")
     second_pass_parser.add_argument("--profile", default=DEFAULT_PROFILE)
     second_pass_parser.add_argument("--timeout", type=int, default=HARD_LOCAL_TIMEOUT)
+    second_pass_parser.add_argument("--role", default="debugging")
+    second_pass_parser.add_argument("--strict-workspace", action="store_true")
     second_pass_parser.set_defaults(func=prepare_second_pass)
+
+    falsifier_parser = subparsers.add_parser(
+        "prepare-falsifier",
+        help="Prepare a one-pass Panda V2 contract falsifier prompt.",
+    )
+    falsifier_parser.add_argument("--run-dir", type=Path, default=default_run_dir("hard-local"))
+    falsifier_parser.add_argument("--task-id", required=True)
+    falsifier_parser.add_argument("--first-pass-panda-output-dir", type=Path)
+    falsifier_parser.add_argument("--contracts-path", type=Path)
+    falsifier_parser.add_argument("--test-output-path", type=Path)
+    falsifier_parser.add_argument("--workspace", type=Path)
+    falsifier_parser.add_argument("--output-dir", type=Path)
+    falsifier_parser.add_argument("--tool", choices=("claude", "opencode", "qwen", "all"), default="all")
+    falsifier_parser.add_argument("--profile", default=DEFAULT_PROFILE)
+    falsifier_parser.add_argument("--timeout", type=int, default=HARD_LOCAL_TIMEOUT)
+    falsifier_parser.set_defaults(func=prepare_falsifier)
 
     record_parser = subparsers.add_parser("record", help="Record one task/variant result.")
     record_parser.add_argument("--run-dir", type=Path, default=default_run_dir())
@@ -1557,6 +2228,8 @@ def build_parser() -> argparse.ArgumentParser:
     record_parser.add_argument("--evidence-used", action="store_true")
     record_parser.add_argument("--patch-path", type=Path)
     record_parser.add_argument("--test-output-path", type=Path)
+    record_parser.add_argument("--workspace-metadata-path", type=Path)
+    record_parser.add_argument("--workspace-isolated", type=bool_arg)
     record_parser.add_argument("--notes", default="")
     record_parser.add_argument("--panda-direction-correct", type=bool_arg)
     record_parser.add_argument("--panda-missed-contract", type=bool_arg)

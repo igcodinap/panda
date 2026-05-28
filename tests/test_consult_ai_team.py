@@ -82,7 +82,12 @@ class ArgumentValidationTests(unittest.TestCase):
     def test_default_tool_runs_all_cores(self) -> None:
         args = self.parse_with(["--prompt", "test"])
         self.assertEqual(args.tool, "all")
+        self.assertEqual(args.protocol, "v1")
         self.assertEqual(consult_ai_team.requested_tools(args.tool), ["claude", "opencode", "qwen"])
+
+    def test_invalid_protocol_is_rejected(self) -> None:
+        with self.assertRaises(SystemExit):
+            self.parse_with(["--protocol", "v3", "--prompt", "test"])
 
     def test_invalid_profile_is_rejected(self) -> None:
         with self.assertRaises(SystemExit):
@@ -129,6 +134,7 @@ class ProfileResolutionTests(unittest.TestCase):
             "implementation-review": ("deep", "opus", "max"),
             "debugging": ("balanced", "sonnet", "high"),
             "code-review": ("balanced", "sonnet", "high"),
+            "contract-falsifier": ("fast", "sonnet", "medium"),
             "test-plan": ("fast", "sonnet", "medium"),
         }
 
@@ -264,6 +270,47 @@ class JsonHelperTests(unittest.TestCase):
 
             self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"ok": True})
             self.assertEqual(list(path.parent.glob("*.tmp")), [])
+
+
+class PromptCompatibilityTests(unittest.TestCase):
+    def test_v1_consultation_prompt_snapshot(self) -> None:
+        expected = """You are advising Codex as an independent collaborator.
+
+Mode: advisory
+Approval mode: unsupervised
+Role: brainstorm
+Role guidance: Propose distinct implementation approaches with tradeoffs.
+
+Rules:
+- Do not edit files.
+- Do not run shell commands.
+- Do not ask for credentials or secrets.
+- Be concise and concrete.
+- Call out assumptions and uncertainty.
+
+Approval guidance:
+- If approval mode is unsupervised, proceed through local tool permission prompts without stopping for Codex approval.
+- Even in unsupervised mode, do not commit, push, publish, deploy, delete data, rewrite history, or alter production systems unless the user explicitly requested that class of action.
+
+User/context prompt:
+test
+
+Return:
+- Recommendation
+- Alternative worth considering
+- Risks or edge cases
+- Verification plan
+"""
+
+        prompt = consult_ai_team.consultation_prompt(
+            "advisory",
+            "brainstorm",
+            "unsupervised",
+            "test",
+        )
+
+        self.assertEqual(prompt, expected)
+        self.assertNotIn("Panda V2", prompt)
 
 
 class ManifestTests(unittest.TestCase):
@@ -518,6 +565,84 @@ Run the suite.
             self.assertIn("telemetry", manifest)
             self.assertEqual(manifest["telemetry"]["tool_count"], 1)
             self.assertEqual(manifest["telemetry"]["artifact_paths"]["evidence"], str(Path(tmpdir) / "evidence.json"))
+            self.assertFalse((Path(tmpdir) / "panda_contracts.v2.json").exists())
+
+    def test_protocol_v2_dry_run_writes_contract_sidecar_without_changing_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = self.parse_with([
+                "--tool",
+                "claude",
+                "--dry-run",
+                "--protocol",
+                "v2",
+                "--output-dir",
+                tmpdir,
+                "--prompt",
+                "test",
+            ])
+            prompt = consult_ai_team.consultation_prompt(
+                args.mode,
+                args.role,
+                args.approval_mode,
+                "test",
+                args.protocol,
+            )
+
+            with patch.object(consult_ai_team, "claude_supports_effort", return_value=False):
+                with redirect_stdout(io.StringIO()):
+                    consult_ai_team.run_one_shot(args, prompt)
+
+            output_dir = Path(tmpdir)
+            evidence = json.loads((output_dir / "evidence.json").read_text(encoding="utf-8"))
+            sidecar = json.loads((output_dir / "panda_contracts.v2.json").read_text(encoding="utf-8"))
+            manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(set(evidence), {"schema_version", "findings"})
+            self.assertEqual(sidecar["artifact_kind"], "contracts")
+            self.assertEqual(sidecar["reports"][0]["parse_status"], "missing")
+            self.assertEqual(manifest["protocol"], "v2")
+            self.assertEqual(
+                manifest["telemetry"]["artifact_paths"]["contracts"],
+                str(output_dir / "panda_contracts.v2.json"),
+            )
+
+    def test_contract_falsifier_protocol_v2_writes_falsifier_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = self.parse_with([
+                "--tool",
+                "claude",
+                "--dry-run",
+                "--role",
+                "contract-falsifier",
+                "--protocol",
+                "v2",
+                "--output-dir",
+                tmpdir,
+                "--prompt",
+                "test",
+            ])
+            prompt = consult_ai_team.consultation_prompt(
+                args.mode,
+                args.role,
+                args.approval_mode,
+                "test",
+                args.protocol,
+            )
+
+            with patch.object(consult_ai_team, "claude_supports_effort", return_value=False):
+                with redirect_stdout(io.StringIO()):
+                    consult_ai_team.run_one_shot(args, prompt)
+
+            output_dir = Path(tmpdir)
+            self.assertFalse((output_dir / "panda_contracts.v2.json").exists())
+            sidecar = json.loads((output_dir / "panda_falsifier.v2.json").read_text(encoding="utf-8"))
+            manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(sidecar["artifact_kind"], "falsifier")
+            self.assertEqual(sidecar["claims_audited"], 0)
+            self.assertEqual(
+                manifest["telemetry"]["artifact_paths"]["falsifier"],
+                str(output_dir / "panda_falsifier.v2.json"),
+            )
 
     def test_failed_and_empty_results_still_produce_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

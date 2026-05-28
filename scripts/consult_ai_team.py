@@ -25,6 +25,14 @@ try:
 except ImportError:  # pragma: no cover - Windows fallback.
     fcntl = None
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = REPO_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from panda_v2 import artifacts as panda_v2_artifacts
+from panda_v2.prompts import protocol_v2_return_addendum
+
 
 ROLE_GUIDANCE = {
     "brainstorm": "Propose distinct implementation approaches with tradeoffs.",
@@ -33,6 +41,7 @@ ROLE_GUIDANCE = {
     "implementation-review": "Critique the proposed implementation path for risks, simpler alternatives, and verification.",
     "debugging": "Suggest likely root causes, discriminating checks, and the smallest useful diagnostic step.",
     "code-review": "Review for behavioral bugs, edge cases, missing tests, and maintainability risks.",
+    "contract-falsifier": "Audit concrete contract claims once; report contradictions, unverifiable claims, and not-found claims without debate.",
     "test-plan": "Propose focused tests and manual verification for the described change.",
 }
 
@@ -43,6 +52,7 @@ EXECUTION_CHOICES = ("auto", "parallel", "sequential")
 APPROVAL_MODE_CHOICES = ("unsupervised", "supervised")
 CLAUDE_EFFORT_CHOICES = ("low", "medium", "high", "xhigh", "max")
 TOOL_CHOICES = ("claude", "opencode", "qwen", "all")
+PROTOCOL_CHOICES = ("v1", "v2")
 PATCH_MODE = "patch"
 PATCH_MODE_DISABLED_MESSAGE = (
     "Patch mode is disabled; use --mode advisory or --mode explore. Codex is the only editor."
@@ -88,6 +98,7 @@ ROLE_DEFAULT_PROFILES = {
     "implementation-review": "deep",
     "debugging": "balanced",
     "code-review": "balanced",
+    "contract-falsifier": "fast",
     "test-plan": "fast",
 }
 HARD_FALLBACK_PROFILE = "balanced"
@@ -101,6 +112,7 @@ EXPLICIT_ARG_FLAGS = {
     "--execution": "execution",
     "--approval-mode": "approval_mode",
     "--role": "role",
+    "--protocol": "protocol",
     "--profile": "profile",
     "--claude-model": "claude_model",
     "--claude-effort": "claude_effort",
@@ -148,6 +160,12 @@ def parse_args() -> argparse.Namespace:
         help="Whether Claude Code/OpenCode should auto-approve their own tool prompts. Defaults to unsupervised.",
     )
     parser.add_argument("--role", choices=sorted(ROLE_GUIDANCE), default="brainstorm")
+    parser.add_argument(
+        "--protocol",
+        choices=PROTOCOL_CHOICES,
+        default="v1",
+        help="Artifact/prompt protocol. v1 preserves existing outputs; v2 adds Panda contract sidecars.",
+    )
     parser.add_argument(
         "--profile",
         choices=sorted(MODEL_PROFILES),
@@ -347,11 +365,17 @@ def read_prompt(args: argparse.Namespace) -> str:
     return prompt
 
 
-def consultation_prompt(mode: str, role: str, approval_mode: str, user_prompt: str) -> str:
+def consultation_prompt(
+    mode: str,
+    role: str,
+    approval_mode: str,
+    user_prompt: str,
+    protocol: str = "v1",
+) -> str:
     reject_disabled_mode(mode)
     if mode not in MODE_GUIDANCE:
         raise SystemExit(f"--mode must be one of: {', '.join(sorted(MODE_GUIDANCE))}")
-    return f"""You are advising Codex as an independent collaborator.
+    prompt = f"""You are advising Codex as an independent collaborator.
 
 Mode: {mode}
 Approval mode: {approval_mode}
@@ -373,6 +397,9 @@ Return:
 - Risks or edge cases
 - Verification plan
 """
+    if protocol == "v2":
+        prompt = f"{prompt}\n{protocol_v2_return_addendum(role)}"
+    return prompt
 
 
 def quote_cmd(command: Iterable[str]) -> str:
@@ -695,6 +722,23 @@ def write_run_artifacts(output_dir: Path, raw_results: dict[str, dict], tool_ord
     }
 
 
+def write_protocol_artifacts(
+    output_dir: Path,
+    raw_results: dict[str, dict],
+    tool_order: Iterable[str],
+    *,
+    protocol: str,
+    role: str,
+) -> dict:
+    if protocol != "v2":
+        return {}
+    if role == "contract-falsifier":
+        sidecar = panda_v2_artifacts.write_falsifier_sidecar(output_dir, raw_results, tool_order)
+        return {"falsifier": sidecar["path"]}
+    sidecar = panda_v2_artifacts.write_contracts_sidecar(output_dir, raw_results, tool_order)
+    return {"contracts": sidecar["path"]}
+
+
 def prompt_telemetry(prompt: str) -> dict:
     char_count = len(prompt)
     return {
@@ -777,7 +821,7 @@ def load_existing_session(session_path: Path) -> tuple[dict, list[str]]:
 
 def new_session_state(args: argparse.Namespace, workspace: Path, session_id: str) -> dict:
     profile_metadata = profile_manifest_metadata(args)
-    return {
+    state = {
         "schema_version": SCHEMA_VERSION,
         "session_id": session_id,
         "created_at": now_iso(),
@@ -811,6 +855,9 @@ def new_session_state(args: argparse.Namespace, workspace: Path, session_id: str
         "latest_stopping_suggestion": None,
         "runner_pid": None,
     }
+    if args.protocol != "v1":
+        state["protocol"] = args.protocol
+    return state
 
 
 def make_session(args: argparse.Namespace, workspace: Path) -> tuple[dict, Path, bool]:
@@ -832,7 +879,7 @@ def make_session(args: argparse.Namespace, workspace: Path) -> tuple[dict, Path,
 
 def inherit_session_args(args: argparse.Namespace, session: dict) -> None:
     explicit_flags = getattr(args, "explicit_flags", set())
-    for field in ("tool", "mode", "role", "approval_mode", "execution"):
+    for field in ("tool", "mode", "role", "approval_mode", "execution", "protocol"):
         if field not in explicit_flags and session.get(field):
             setattr(args, field, session[field])
     if "profile" not in explicit_flags and session.get("profile"):
@@ -1342,10 +1389,19 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
         write_response(output_dir, result)
 
     artifact_info = write_run_artifacts(output_dir, raw_results, commands)
+    protocol_artifact_paths = write_protocol_artifacts(
+        output_dir,
+        raw_results,
+        commands,
+        protocol=args.protocol,
+        role=args.role,
+    )
     artifact_paths = {
         "evidence": artifact_info["evidence_path"],
         "summaries": artifact_info["summary_paths"],
     }
+    if protocol_artifact_paths:
+        artifact_paths.update(protocol_artifact_paths)
 
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -1364,6 +1420,8 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
         "tools": results,
         "telemetry": build_telemetry(raw_results, artifact_paths, prompt=prompt),
     }
+    if args.protocol != "v1":
+        manifest["protocol"] = args.protocol
     manifest.update(profile_manifest_metadata(args))
     write_json(output_dir / "manifest.json", manifest)
 
@@ -1788,7 +1846,7 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
         if created or session_memory_disabled(args):
             previous_context = None
         prompt_user_context = add_session_memory_to_prompt(user_prompt, previous_context)
-        prompt = consultation_prompt(args.mode, args.role, args.approval_mode, prompt_user_context)
+        prompt = consultation_prompt(args.mode, args.role, args.approval_mode, prompt_user_context, args.protocol)
         session_path.mkdir(parents=True, exist_ok=True)
         turn_number, turn_dir = next_available_turn_dir(
             session_path,
@@ -1828,6 +1886,8 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
             "effort_support": dict(profile_metadata["effort_support"]),
             "applied_effort": dict(profile_metadata["applied_effort"]),
         })
+        if args.protocol != "v1":
+            session["protocol"] = args.protocol
         if recovery_notes:
             session["recovery_notes"] = recovery_notes
         write_json(session_path / "session.json", session)
@@ -1860,10 +1920,19 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
             write_response(turn_dir, result)
 
         artifact_info = write_run_artifacts(turn_dir, raw_results, commands)
+        protocol_artifact_paths = write_protocol_artifacts(
+            turn_dir,
+            raw_results,
+            commands,
+            protocol=args.protocol,
+            role=args.role,
+        )
         artifact_paths = {
             "evidence": artifact_info["evidence_path"],
             "summaries": artifact_info["summary_paths"],
         }
+        if protocol_artifact_paths:
+            artifact_paths.update(protocol_artifact_paths)
 
         stopping_suggestion = latest_stopping_suggestion(raw_results.values())
         current_turn_status = turn_status(raw_results.values())
@@ -1917,6 +1986,8 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
                 extra_warnings=recovery_warnings,
             ),
         }
+        if args.protocol != "v1":
+            manifest["protocol"] = args.protocol
         manifest.update(profile_metadata)
         write_json(turn_dir / "manifest.json", manifest)
         write_json(session_path / "session.json", session)
@@ -1936,7 +2007,7 @@ def main() -> int:
     user_prompt = read_prompt(args)
     if args.session is not None:
         return run_session(args, user_prompt)
-    prompt = consultation_prompt(args.mode, args.role, args.approval_mode, user_prompt)
+    prompt = consultation_prompt(args.mode, args.role, args.approval_mode, user_prompt, args.protocol)
     return run_one_shot(args, prompt)
 
 
