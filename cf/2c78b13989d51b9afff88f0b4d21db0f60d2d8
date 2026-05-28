@@ -1,0 +1,96 @@
+references/panda-v2-philosophy.md
+  s_cad106fb132cc7::t_d8ba5c35bf1ab6 87-107,119-125,239-246,277-286
+  s_cad106fb132cc7::t_be3065c04a34de 1-12,26-31,34-48,54-86,108-118,126-137,139-147,150-176,179-238,247-276,287-321,323-348
+  s_cad106fb132cc7::t_24f98cd3096cab 13-25,177-178
+  s_cad106fb132cc7::t_1f46916a189b43 32-33,49-53,138,148-149,322
+references/evaluation-results/20260527-diagnosis/run_manifest.json
+  s_11341de7cfb95b::t_6086244c4a9524 1-5,10-39
+  s_11341de7cfb95b::t_f87dbae6d29dd0 6-9
+references/evaluation-results/20260526-contract-first-v2/base_sources_manifest.json
+  s_11341de7cfb95b::t_fd753a6b93f3b8 1-35
+references/evaluation-results/20260527-diagnosis/flipt-ecr-panda_replay-v2-eval_results.json
+  s_11341de7cfb95b::t_d97debe93c0730 1
+references/evaluation-results/20260527-diagnosis/navidrome-player-userid-panda_replay-result.json
+  s_11341de7cfb95b::t_3142cf78631fb6 1-50
+references/evaluation-results/20260527-diagnosis/summary.json
+  s_11341de7cfb95b::t_d97debe93c0730 3,35-36,41,56,70,73,81-82,86-87,91-92,96-97,105,119,122,130-131,135-136,140-141,145-146,151
+  s_11341de7cfb95b::t_85c0cc9bab5301 1-2,4-34,37-40,42-55,57-69,71-72,74-80,83-85,88-90,93-95,98-104,106-118,120-121,123-129,132-134,137-139,142-144,147-150,152-153
+scripts/consult_ai_team.py
+  s_cad106fb132cc7::t_4dda31b07626bd 55,166-167,373,378-379,402,734,858,1422,1887,1986
+references/evaluation-hard-local.md
+  s_11341de7cfb95b::t_bbc4fbf79d5f1d 117,121,131,143-145,162-163,180,183,199-201
+  s_11341de7cfb95b::t_55e2539908a5d2 108-116,118-120,122-130,132-134,140,148,164,186,202,243
+AGENTS.md
+  s_cad106fb132cc7::t_8bc6a03a13be23 7,21-24,28,34-36,41
+references/evaluation-results/20260527-diagnosis/flipt-ecr-panda_replay-result.json
+  s_11341de7cfb95b::t_d97debe93c0730 1-51
+references/evaluation-results/20260525-hard-local/navidrome-player-userid-panda_replay-result.json
+  s_11341de7cfb95b::t_21423474fdfbb2 1-45
+references/evaluation-results/20260526-contract-first-v2/results.json
+  s_11341de7cfb95b::t_fd753a6b93f3b8 1-230
+references/evaluation-results/20260527-diagnosis/results.json
+  s_11341de7cfb95b::t_64cba99a53a3b2 1-52,104-106
+  s_11341de7cfb95b::t_d97debe93c0730 53-103
+references/prompt-patterns.md
+  s_11341de7cfb95b::t_a4d3ef02d2b623 47-62,109
+SKILL.md
+  s_11341de7cfb95b::t_a01b39d45d3731 194
+  s_cad106fb132cc7::t_122f7469b30d2a 166
+  s_cad106fb132cc7::t_549debe3839e10 55-56
+references/evaluation-results/20260525-hard-local/navidrome-player-userid-panda_replay_second_pass-result.json
+  s_11341de7cfb95b::t_fda3706af6d837 1-48
+references/evaluation-results/20260525-hard-local/navidrome-player-userid-codex_alone_scout-result.json
+  s_11341de7cfb95b::t_a7fca6a37c8ef9 1-19
+references/evaluation-results/20260525-hard-local/summary.json
+  s_11341de7cfb95b::t_05da43e827998d 3,26-28,32,35,43-51,53-56,59-63,67-69,71,73-100,102-105,108-112,116-118,120,122-149,151
+references/evaluation-findings.md
+  s_11341de7cfb95b::t_41062f815025ac 240-285
+  s_11341de7cfb95b::t_287b181561fdd9 186-196
+  s_11341de7cfb95b::t_1d6d83fae8ebef 197-239
+  s_11341de7cfb95b::t_335c03055722bf 142-185
+  s_11341de7cfb95b::t_04e46876d90f37 286-326
+references/evaluation-results/20260526-contract-first-v2/run_manifest.json
+  s_11341de7cfb95b::t_fd753a6b93f3b8 1-42
+references/evaluation-results/20260526-contract-first-v2/summary.json
+  s_11341de7cfb95b::t_fd753a6b93f3b8 1-153
+tests/test_consult_ai_team.py
+  s_cad106fb132cc7::t_d38fc5715eaaa7 85,90,276,284-287
+  s_cad106fb132cc7::t_436a033ee7109f 515,535,541,544-546,548
+tests/test_panda_eval.py
+  s_cad106fb132cc7::t_652e4dcb98faa8 673,677-678,692,696,745,1046
+  s_cad106fb132cc7::t_37534db8723619 764-776
+  s_cad106fb132cc7::t_8697d6eb7902a1 1280
+  s_cad106fb132cc7::t_3c1505b6a0b357 7
+references/evaluation-results/20260525-hard-local/vuls-cvss-codex_alone_scout-result.json
+  s_11341de7cfb95b::t_b135d5a1b89e7e 1-19
+scripts/panda_eval.py
+  s_cad106fb132cc7::t_4a985bbc344814 909-912,970,1387,2179
+references/evaluation-results/20260526-contract-first-v2/selected_tasks.json
+  s_11341de7cfb95b::t_fd753a6b93f3b8 1-125
+references/evaluation-results/20260525-hard-local/qutebrowser-codex_alone_scout-result.json
+  s_11341de7cfb95b::t_2e3b356c8d2298 1-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "cf2c78b13989d51b9afff88f0b4d21db0f60d2d8",
+  "prompts": {},
+  "sessions": {
+    "s_11341de7cfb95b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e522c-432f-7803-8147-b257e34b4fee",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    },
+    "s_cad106fb132cc7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6b9b-e99e-7d11-bf1f-925c07843e9f",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
