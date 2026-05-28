@@ -52,7 +52,7 @@ EXECUTION_CHOICES = ("auto", "parallel", "sequential")
 APPROVAL_MODE_CHOICES = ("unsupervised", "supervised")
 CLAUDE_EFFORT_CHOICES = ("low", "medium", "high", "xhigh", "max")
 TOOL_CHOICES = ("claude", "opencode", "qwen", "all")
-PROTOCOL_CHOICES = ("v1", "v2")
+PROTOCOL_CHOICES = ("v2",)
 PATCH_MODE = "patch"
 PATCH_MODE_DISABLED_MESSAGE = (
     "Patch mode is disabled; use --mode advisory or --mode explore. Codex is the only editor."
@@ -163,8 +163,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--protocol",
         choices=PROTOCOL_CHOICES,
-        default="v1",
-        help="Artifact/prompt protocol. v1 preserves existing outputs; v2 adds Panda contract sidecars.",
+        default="v2",
+        help="Artifact/prompt protocol. V2 is the formal Panda flow and writes contract sidecars.",
     )
     parser.add_argument(
         "--profile",
@@ -370,11 +370,13 @@ def consultation_prompt(
     role: str,
     approval_mode: str,
     user_prompt: str,
-    protocol: str = "v1",
+    protocol: str = "v2",
 ) -> str:
     reject_disabled_mode(mode)
     if mode not in MODE_GUIDANCE:
         raise SystemExit(f"--mode must be one of: {', '.join(sorted(MODE_GUIDANCE))}")
+    if protocol != "v2":
+        raise SystemExit("Panda V1 protocol was removed; use protocol v2.")
     prompt = f"""You are advising Codex as an independent collaborator.
 
 Mode: {mode}
@@ -397,9 +399,7 @@ Return:
 - Risks or edge cases
 - Verification plan
 """
-    if protocol == "v2":
-        prompt = f"{prompt}\n{protocol_v2_return_addendum(role)}"
-    return prompt
+    return f"{prompt}\n{protocol_v2_return_addendum(role)}"
 
 
 def quote_cmd(command: Iterable[str]) -> str:
@@ -731,7 +731,7 @@ def write_protocol_artifacts(
     role: str,
 ) -> dict:
     if protocol != "v2":
-        return {}
+        raise ValueError(f"Unsupported Panda protocol: {protocol}")
     if role == "contract-falsifier":
         sidecar = panda_v2_artifacts.write_falsifier_sidecar(output_dir, raw_results, tool_order)
         return {"falsifier": sidecar["path"]}
@@ -855,8 +855,7 @@ def new_session_state(args: argparse.Namespace, workspace: Path, session_id: str
         "latest_stopping_suggestion": None,
         "runner_pid": None,
     }
-    if args.protocol != "v1":
-        state["protocol"] = args.protocol
+    state["protocol"] = args.protocol
     return state
 
 
@@ -1420,8 +1419,7 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
         "tools": results,
         "telemetry": build_telemetry(raw_results, artifact_paths, prompt=prompt),
     }
-    if args.protocol != "v1":
-        manifest["protocol"] = args.protocol
+    manifest["protocol"] = args.protocol
     manifest.update(profile_manifest_metadata(args))
     write_json(output_dir / "manifest.json", manifest)
 
@@ -1886,8 +1884,7 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
             "effort_support": dict(profile_metadata["effort_support"]),
             "applied_effort": dict(profile_metadata["applied_effort"]),
         })
-        if args.protocol != "v1":
-            session["protocol"] = args.protocol
+        session["protocol"] = args.protocol
         if recovery_notes:
             session["recovery_notes"] = recovery_notes
         write_json(session_path / "session.json", session)
@@ -1986,8 +1983,7 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
                 extra_warnings=recovery_warnings,
             ),
         }
-        if args.protocol != "v1":
-            manifest["protocol"] = args.protocol
+        manifest["protocol"] = args.protocol
         manifest.update(profile_metadata)
         write_json(turn_dir / "manifest.json", manifest)
         write_json(session_path / "session.json", session)

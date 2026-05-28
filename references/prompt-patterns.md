@@ -44,6 +44,22 @@ Relevant code context:
 Please critique this plan. Focus on hidden coupling, simpler alternatives, migration risks, and tests Codex should run.
 ```
 
+## Contract-First Replay
+
+```text
+Goal:
+- Advise Codex before it edits a hard benchmark task.
+
+Task context:
+- ...
+
+Workspace:
+- Base-only/no-.git checkout.
+
+Please inspect local code and tests, then return a contract map, local evidence, likely evaluator assertions, recommendation, alternative, risks, falsifiers or uncertainties, and a verification plan.
+Do not edit files or use gold patch/test_patch/FAIL_TO_PASS/target commit details.
+```
+
 ## Debugging
 
 ```text
@@ -90,7 +106,7 @@ Observed failure:
 Relevant local files or package hints:
 - ...
 
-Please infer likely contract expectations from local evidence, call out uncertainty, and avoid relying on any gold benchmark patch or test_patch content.
+Please infer likely contract expectations from local evidence, enumerate the public/local tests that exercise the affected boundary, call out uncertainty, and avoid relying on any gold benchmark patch, test_patch, FAIL_TO_PASS, hidden test source, or target commit content.
 ```
 
 ## Code Review

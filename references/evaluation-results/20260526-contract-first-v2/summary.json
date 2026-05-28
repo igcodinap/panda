@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "created_at": "2026-05-26T23:04:11.472627+00:00",
-  "run_dir": "/private/tmp/panda-eval/20260525-hard-local",
-  "canary_ok": true,
+  "created_at": "2026-05-27T02:52:30.977797+00:00",
+  "run_dir": "/private/tmp/panda-eval/20260526-contract-first-v2",
+  "canary_ok": null,
   "metrics": {
     "codex_alone": {
       "total": 0,
@@ -23,16 +23,16 @@
       "mean_time_to_green": null
     },
     "codex_alone_scout": {
-      "total": 8,
-      "accepted": 4,
-      "pass_rate": 0.5,
+      "total": 0,
+      "accepted": 0,
+      "pass_rate": null,
       "panda_runner_failure_rate": null,
       "claude_budget_failure_rate": null,
       "evidence_use_rate": null,
-      "mean_time_to_green": 1646.75
+      "mean_time_to_green": null
     },
     "panda_replay": {
-      "total": 3,
+      "total": 5,
       "accepted": 0,
       "pass_rate": 0.0,
       "panda_runner_failure_rate": 0.0,
@@ -41,24 +41,24 @@
       "mean_time_to_green": null
     },
     "panda_replay_second_pass": {
-      "total": 3,
+      "total": 0,
       "accepted": 0,
-      "pass_rate": 0.0,
-      "panda_runner_failure_rate": 0.0,
-      "claude_budget_failure_rate": 0.0,
-      "evidence_use_rate": 0.6666666666666666,
+      "pass_rate": null,
+      "panda_runner_failure_rate": null,
+      "claude_budget_failure_rate": null,
+      "evidence_use_rate": null,
       "mean_time_to_green": null
     },
     "hard_local": {
-      "codex_scout_total": 7,
-      "codex_scout_pass_rate": 0.5714285714285714,
-      "codex_struggle_count": 3,
-      "panda_replay_total": 3,
+      "codex_scout_total": 0,
+      "codex_scout_pass_rate": null,
+      "codex_struggle_count": 0,
+      "panda_replay_total": 5,
       "panda_replay_pass_rate": 0.0,
-      "failure_to_success_rescue_rate": 0.0,
-      "panda_replay_second_pass_total": 2,
-      "panda_replay_second_pass_pass_rate": 0.0,
-      "second_pass_rescue_rate": 0.0,
+      "failure_to_success_rescue_rate": null,
+      "panda_replay_second_pass_total": 0,
+      "panda_replay_second_pass_pass_rate": null,
+      "second_pass_rescue_rate": null,
       "incremental_second_pass_rescue_count": 0,
       "second_pass_min_sample_met": false,
       "panda_runner_failure_rate": 0.0,
@@ -68,46 +68,46 @@
       "panda_replay_claude_budget_failure_rate": 0.0,
       "panda_replay_evidence_use_rate": 1.0,
       "mean_time_to_green": null,
-      "contaminated_task_count": 2,
+      "contaminated_task_count": 0,
       "benchmark_invalid_task_count": 0,
-      "replay_without_matching_scout_count": 0,
+      "replay_without_matching_scout_count": 5,
       "second_pass_without_matching_scout_count": 0,
       "second_pass_without_matching_replay_count": 0,
-      "second_pass_runner_failure_rate": 0.0,
-      "second_pass_claude_budget_failure_rate": 0.0,
-      "second_pass_evidence_use_rate": 1.0,
+      "second_pass_runner_failure_rate": null,
+      "second_pass_claude_budget_failure_rate": null,
+      "second_pass_evidence_use_rate": null,
       "advice_quality": {
         "panda_direction_correct": {
-          "rated_count": 2,
-          "true_count": 1,
-          "true_rate": 0.5
+          "rated_count": 0,
+          "true_count": 0,
+          "true_rate": null
         },
         "panda_missed_contract": {
-          "rated_count": 2,
-          "true_count": 2,
-          "true_rate": 1.0
+          "rated_count": 0,
+          "true_count": 0,
+          "true_rate": null
         },
         "codex_implementation_error": {
-          "rated_count": 2,
-          "true_count": 2,
-          "true_rate": 1.0
+          "rated_count": 0,
+          "true_count": 0,
+          "true_rate": null
         },
         "evidence_was_actionable": {
-          "rated_count": 2,
-          "true_count": 2,
-          "true_rate": 1.0
+          "rated_count": 0,
+          "true_count": 0,
+          "true_rate": null
         }
       }
     },
-    "codex_scout_total": 7,
-    "codex_scout_pass_rate": 0.5714285714285714,
-    "codex_struggle_count": 3,
-    "panda_replay_total": 3,
+    "codex_scout_total": 0,
+    "codex_scout_pass_rate": null,
+    "codex_struggle_count": 0,
+    "panda_replay_total": 5,
     "panda_replay_pass_rate": 0.0,
-    "failure_to_success_rescue_rate": 0.0,
-    "panda_replay_second_pass_total": 2,
-    "panda_replay_second_pass_pass_rate": 0.0,
-    "second_pass_rescue_rate": 0.0,
+    "failure_to_success_rescue_rate": null,
+    "panda_replay_second_pass_total": 0,
+    "panda_replay_second_pass_pass_rate": null,
+    "second_pass_rescue_rate": null,
     "incremental_second_pass_rescue_count": 0,
     "second_pass_min_sample_met": false,
     "panda_runner_failure_rate": 0.0,
@@ -117,37 +117,37 @@
     "panda_replay_claude_budget_failure_rate": 0.0,
     "panda_replay_evidence_use_rate": 1.0,
     "mean_time_to_green": null,
-    "contaminated_task_count": 2,
+    "contaminated_task_count": 0,
     "benchmark_invalid_task_count": 0,
-    "replay_without_matching_scout_count": 0,
+    "replay_without_matching_scout_count": 5,
     "second_pass_without_matching_scout_count": 0,
     "second_pass_without_matching_replay_count": 0,
-    "second_pass_runner_failure_rate": 0.0,
-    "second_pass_claude_budget_failure_rate": 0.0,
-    "second_pass_evidence_use_rate": 1.0,
+    "second_pass_runner_failure_rate": null,
+    "second_pass_claude_budget_failure_rate": null,
+    "second_pass_evidence_use_rate": null,
     "advice_quality": {
       "panda_direction_correct": {
-        "rated_count": 2,
-        "true_count": 1,
-        "true_rate": 0.5
+        "rated_count": 0,
+        "true_count": 0,
+        "true_rate": null
       },
       "panda_missed_contract": {
-        "rated_count": 2,
-        "true_count": 2,
-        "true_rate": 1.0
+        "rated_count": 0,
+        "true_count": 0,
+        "true_rate": null
       },
       "codex_implementation_error": {
-        "rated_count": 2,
-        "true_count": 2,
-        "true_rate": 1.0
+        "rated_count": 0,
+        "true_count": 0,
+        "true_rate": null
       },
       "evidence_was_actionable": {
-        "rated_count": 2,
-        "true_count": 2,
-        "true_rate": 1.0
+        "rated_count": 0,
+        "true_count": 0,
+        "true_rate": null
       }
     }
   },
-  "completed_task_variants": 14,
+  "completed_task_variants": 5,
   "budget_exhausted": false
 }

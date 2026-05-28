@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "task_id": "instance_qutebrowser__qutebrowser-3fd8e12949b8feda401930574facf09dd4180bba",
+      "base_commit": "a19634474246739027f826968ea34e720c0ec987",
+      "repo_path": "/private/tmp/panda-eval/20260525-hard-local/worktrees/instance_qutebrowser__qutebrowser-3fd8e12949b8feda401930574facf09dd4180bba/codex_alone_scout/repo",
+      "base_source": "/private/tmp/panda-eval/20260526-contract-first-v2/base_sources/instance_qutebrowser__qutebrowser-3fd8e12949b8feda401930574facf09dd4180bba"
+    },
+    {
+      "task_id": "instance_future-architect__vuls-3c1489e588dacea455ccf4c352a3b1006902e2d4",
+      "base_commit": "e4f1e03f6234bbe88564bdfc2d23f120db3c67a6",
+      "repo_path": "/private/tmp/panda-eval/20260525-hard-local/worktrees/instance_future-architect__vuls-3c1489e588dacea455ccf4c352a3b1006902e2d4/codex_alone_scout/repo",
+      "base_source": "/private/tmp/panda-eval/20260526-contract-first-v2/base_sources/instance_future-architect__vuls-3c1489e588dacea455ccf4c352a3b1006902e2d4"
+    },
+    {
+      "task_id": "instance_flipt-io__flipt-96820c3ad10b0b2305e8877b6b303f7fafdf815f",
+      "base_commit": "8dd44097778951eaa6976631d35bc418590d1555",
+      "repo_path": "/private/tmp/panda-eval/20260525-hard-local/worktrees/instance_flipt-io__flipt-96820c3ad10b0b2305e8877b6b303f7fafdf815f/codex_alone_scout/repo",
+      "base_source": "/private/tmp/panda-eval/20260526-contract-first-v2/base_sources/instance_flipt-io__flipt-96820c3ad10b0b2305e8877b6b303f7fafdf815f"
+    },
+    {
+      "task_id": "instance_flipt-io__flipt-e50808c03e4b9d25a6a78af9c61a3b1616ea356b",
+      "base_commit": "5069ba6fa22fbbf208352ff341ea7a85d6eca29f",
+      "repo_path": "/private/tmp/panda-eval/20260525-hard-local/worktrees/instance_flipt-io__flipt-e50808c03e4b9d25a6a78af9c61a3b1616ea356b/codex_alone_scout/repo",
+      "base_source": "/private/tmp/panda-eval/20260526-contract-first-v2/base_sources/instance_flipt-io__flipt-e50808c03e4b9d25a6a78af9c61a3b1616ea356b"
+    },
+    {
+      "task_id": "instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da",
+      "base_commit": "5360283bb0368c5226b301f99b7095a54407b053",
+      "repo_path": "/private/tmp/panda-eval/20260525-hard-local/worktrees/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/codex_alone_scout/repo",
+      "base_source": "/private/tmp/panda-eval/20260526-contract-first-v2/base_sources/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da"
+    }
+  ]
+}

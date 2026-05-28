@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
 
@@ -670,13 +670,12 @@ class PandaEvalTests(unittest.TestCase):
             metadata = json.loads((out_dir / "prompt_metadata.json").read_text(encoding="utf-8"))
             self.assertIn("--mode explore", command)
             self.assertIn("--role implementation-review", command)
-            self.assertNotIn("--protocol v2", command)
+            self.assertIn("--protocol v2", command)
             self.assertIn("--prompt-file", command)
             self.assertIn("--workspace", command)
             self.assertIn("Contract map", prompt)
-            self.assertNotIn("Additional Panda V2 contract focus", prompt)
-            self.assertNotIn("panda_contracts_v2", prompt)
-            self.assertNotIn("unexported type names", prompt)
+            self.assertIn("Additional Panda V2 contract focus", prompt)
+            self.assertIn("unexported type names", prompt)
             self.assertIn("Local evidence", prompt)
             self.assertIn("Likely evaluator assertions", prompt)
             self.assertIn("Falsifiers or uncertainties", prompt)
@@ -690,11 +689,11 @@ class PandaEvalTests(unittest.TestCase):
             self.assertNotIn("a" * 40, prompt)
             self.assertNotIn("b" * 40, prompt)
             self.assertEqual(metadata["prompt_kind"], "contract_first_first_pass")
-            self.assertEqual(metadata["prompt_version"], 1)
+            self.assertEqual(metadata["prompt_version"], 2)
             self.assertFalse(metadata["prompt_truncated"])
             self.assertEqual(metadata["workspace_check"]["isolation_status"], "clean")
 
-    def test_prepare_first_pass_prompt_version_two_adds_protocol_v2(self) -> None:
+    def test_prepare_first_pass_prompt_version_two_is_the_main_flow(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             run_dir = Path(tmpdir)
             workspace = run_dir / "workspace"
@@ -743,7 +742,7 @@ class PandaEvalTests(unittest.TestCase):
             self.assertIn("--protocol", metadata["command"])
             self.assertIn("v2", metadata["command"])
 
-    def test_prepare_first_pass_prompt_version_one_matches_snapshot(self) -> None:
+    def test_prepare_first_pass_prompt_version_one_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             run_dir = Path(tmpdir)
             workspace = run_dir / "workspace"
@@ -762,26 +761,19 @@ class PandaEvalTests(unittest.TestCase):
                 }),
                 encoding="utf-8",
             )
-            args = panda_eval.build_parser().parse_args([
-                "prepare-first-pass",
-                "--run-dir",
-                tmpdir,
-                "--task-id",
-                task_id,
-                "--workspace",
-                str(workspace),
-            ])
-
-            prompt, metadata = panda_eval.build_first_pass_prompt(args)
-
-            expected = (
-                Path(__file__).resolve().parent
-                / "fixtures"
-                / "v1"
-                / "first_pass_prompt.txt"
-            ).read_text(encoding="utf-8")
-            self.assertEqual(prompt, expected)
-            self.assertEqual(metadata["prompt_version"], 1)
+            with redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    panda_eval.build_parser().parse_args([
+                        "prepare-first-pass",
+                        "--run-dir",
+                        tmpdir,
+                        "--task-id",
+                        task_id,
+                        "--workspace",
+                        str(workspace),
+                        "--prompt-version",
+                        "1",
+                    ])
 
     def test_prepare_first_pass_respects_char_caps(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1051,7 +1043,7 @@ class PandaEvalTests(unittest.TestCase):
             metadata = json.loads((out_dir / "prompt_metadata.json").read_text(encoding="utf-8"))
             self.assertIn("--prompt-file", command)
             self.assertIn("--role debugging", command)
-            self.assertNotIn("--protocol v2", command)
+            self.assertIn("--protocol v2", command)
             self.assertIn("What did the first Panda pass miss", prompt)
             self.assertIn("TestStore_FetchWithECR", prompt)
             self.assertIn("internal/oci/file_test.go", prompt)
@@ -1285,7 +1277,7 @@ class PandaEvalTests(unittest.TestCase):
         for section in [
             "## Repo Map",
             "## Edit Order",
-            "## V1 Compatibility Rules",
+            "## Main Flow Rules",
             "## Artifact Rules",
             "## Prompt Version Rules",
             "## Test Expectations",

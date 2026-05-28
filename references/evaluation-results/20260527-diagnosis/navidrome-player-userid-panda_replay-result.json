@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "task_id": "instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da",
+  "variant": "panda_replay",
+  "tests_passed": true,
+  "accepted": true,
+  "regression": false,
+  "classification": "accepted",
+  "contaminated": false,
+  "benchmark_invalid": false,
+  "wall_seconds": 41.0,
+  "panda_run_failed": false,
+  "claude_budget_failure": false,
+  "evidence_used": true,
+  "notes": "Official Navidrome replay accepted on v5. Panda first pass pointed toward canonical user/player registration but missed target API field names and persistence details; evaluator feedback exposed UserId/Username/IP mapping and user_name FK issue. wall_seconds records accepted evaluator runtime only, not total solve time.",
+  "patch_path": "/private/tmp/panda-eval/20260527-diagnosis/navidrome/navidrome-first-pass-v5.patch",
+  "test_output_path": "/private/tmp/panda-eval/20260527-diagnosis/navidrome/eval-first-pass-v5/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/navidrome_first_pass_v5_stdout.log",
+  "recorded_at": "2026-05-27T13:20:09.961453+00:00",
+  "workspace_preparation": {
+    "workspace_isolated": true,
+    "workspace_metadata_path": "/private/tmp/panda-eval/20260526-contract-first-v2/tasks/instance_navidrome__navidrome-_redacted-sha-58b8acc792/workspace_metadata.json"
+  },
+  "panda_direction_correct": true,
+  "panda_missed_contract": true,
+  "codex_implementation_error": true,
+  "evidence_was_actionable": true,
+  "second_pass_used": false,
+  "panda_output_dir": "/private/tmp/panda-eval/20260526-contract-first-v2/tasks/instance_navidrome__navidrome-_redacted-sha-58b8acc792/panda_replay/panda",
+  "panda_core_status": {
+    "claude": {
+      "status": "success",
+      "returncode": 0,
+      "timed_out": false,
+      "budget_failure": false
+    },
+    "opencode": {
+      "status": "success",
+      "returncode": 0,
+      "timed_out": false,
+      "budget_failure": false
+    },
+    "qwen": {
+      "status": "success",
+      "returncode": 0,
+      "timed_out": false,
+      "budget_failure": false
+    }
+  },
+  "panda_artifact_failures": []
+}

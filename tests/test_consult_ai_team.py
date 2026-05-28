@@ -82,12 +82,12 @@ class ArgumentValidationTests(unittest.TestCase):
     def test_default_tool_runs_all_cores(self) -> None:
         args = self.parse_with(["--prompt", "test"])
         self.assertEqual(args.tool, "all")
-        self.assertEqual(args.protocol, "v1")
+        self.assertEqual(args.protocol, "v2")
         self.assertEqual(consult_ai_team.requested_tools(args.tool), ["claude", "opencode", "qwen"])
 
     def test_invalid_protocol_is_rejected(self) -> None:
         with self.assertRaises(SystemExit):
-            self.parse_with(["--protocol", "v3", "--prompt", "test"])
+            self.parse_with(["--protocol", "v1", "--prompt", "test"])
 
     def test_invalid_profile_is_rejected(self) -> None:
         with self.assertRaises(SystemExit):
@@ -273,35 +273,7 @@ class JsonHelperTests(unittest.TestCase):
 
 
 class PromptCompatibilityTests(unittest.TestCase):
-    def test_v1_consultation_prompt_snapshot(self) -> None:
-        expected = """You are advising Codex as an independent collaborator.
-
-Mode: advisory
-Approval mode: unsupervised
-Role: brainstorm
-Role guidance: Propose distinct implementation approaches with tradeoffs.
-
-Rules:
-- Do not edit files.
-- Do not run shell commands.
-- Do not ask for credentials or secrets.
-- Be concise and concrete.
-- Call out assumptions and uncertainty.
-
-Approval guidance:
-- If approval mode is unsupervised, proceed through local tool permission prompts without stopping for Codex approval.
-- Even in unsupervised mode, do not commit, push, publish, deploy, delete data, rewrite history, or alter production systems unless the user explicitly requested that class of action.
-
-User/context prompt:
-test
-
-Return:
-- Recommendation
-- Alternative worth considering
-- Risks or edge cases
-- Verification plan
-"""
-
+    def test_default_consultation_prompt_uses_v2_contract_protocol(self) -> None:
         prompt = consult_ai_team.consultation_prompt(
             "advisory",
             "brainstorm",
@@ -309,8 +281,10 @@ Return:
             "test",
         )
 
-        self.assertEqual(prompt, expected)
-        self.assertNotIn("Panda V2", prompt)
+        self.assertIn("You are advising Codex as an independent collaborator.", prompt)
+        self.assertIn("Panda V2 contract artifact", prompt)
+        self.assertIn("panda_contracts_v2", prompt)
+        self.assertIn("Double-escape regex or path backslashes", prompt)
 
 
 class ManifestTests(unittest.TestCase):
@@ -538,7 +512,7 @@ Run the suite.
         self.assertIsNone(fields["recommendation"])
         self.assertIsNone(fields["risks"])
 
-    def test_one_shot_dry_run_writes_evidence_and_summaries(self) -> None:
+    def test_one_shot_dry_run_writes_evidence_summaries_and_contract_sidecar(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             args = self.parse_with([
                 "--tool",
@@ -558,16 +532,20 @@ Run the suite.
             evidence = json.loads((Path(tmpdir) / "evidence.json").read_text(encoding="utf-8"))
             summary = json.loads((Path(tmpdir) / "claude.summary.json").read_text(encoding="utf-8"))
             manifest = json.loads((Path(tmpdir) / "manifest.json").read_text(encoding="utf-8"))
+            sidecar = json.loads((Path(tmpdir) / "panda_contracts.v2.json").read_text(encoding="utf-8"))
 
             self.assertEqual(evidence["schema_version"], consult_ai_team.SCHEMA_VERSION)
             self.assertEqual(evidence["findings"][0]["tool"], "claude")
             self.assertEqual(summary["raw_output_path"], str(Path(tmpdir) / "claude.txt"))
             self.assertIn("telemetry", manifest)
+            self.assertEqual(manifest["protocol"], "v2")
             self.assertEqual(manifest["telemetry"]["tool_count"], 1)
             self.assertEqual(manifest["telemetry"]["artifact_paths"]["evidence"], str(Path(tmpdir) / "evidence.json"))
-            self.assertFalse((Path(tmpdir) / "panda_contracts.v2.json").exists())
+            self.assertEqual(manifest["telemetry"]["artifact_paths"]["contracts"], str(Path(tmpdir) / "panda_contracts.v2.json"))
+            self.assertEqual(sidecar["artifact_kind"], "contracts")
+            self.assertEqual(sidecar["reports"][0]["parse_status"], "missing")
 
-    def test_protocol_v2_dry_run_writes_contract_sidecar_without_changing_evidence(self) -> None:
+    def test_explicit_protocol_v2_dry_run_writes_contract_sidecar_without_changing_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             args = self.parse_with([
                 "--tool",
@@ -614,8 +592,6 @@ Run the suite.
                 "--dry-run",
                 "--role",
                 "contract-falsifier",
-                "--protocol",
-                "v2",
                 "--output-dir",
                 tmpdir,
                 "--prompt",

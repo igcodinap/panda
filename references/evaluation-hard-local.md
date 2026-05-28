@@ -105,17 +105,47 @@ Replay up to eight Codex-struggle tasks from clean checkouts:
 - `low_confidence`
 - `slow_solve`
 
-Run Panda first:
+Create a benchmark-safe Panda workspace first. The destination is a source copy without `.git`, nested git files, or common transient caches:
+
+```bash
+python3 scripts/panda_eval.py prepare-workspace \
+  --run-dir /private/tmp/panda-eval/YYYYMMDD-hard-local \
+  --task-id TASK_ID \
+  --source-workspace /path/to/base/task/repo
+```
+
+The command writes `workspace_metadata.json` under a safe task directory with commit-like task-id fragments redacted. Use the printed metadata path and its `destination_path` for the next commands. If you already have a prepared workspace, check it before exposing it to Panda:
+
+```bash
+python3 scripts/panda_eval.py check-workspace \
+  --workspace /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace \
+  --strict
+```
+
+Then generate the first-pass contract review prompt:
+
+```bash
+python3 scripts/panda_eval.py prepare-first-pass \
+  --run-dir /private/tmp/panda-eval/YYYYMMDD-hard-local \
+  --task-id TASK_ID \
+  --workspace /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace
+```
+
+Run the printed `consult_ai_team.py` command. It will look like:
 
 ```bash
 python3 scripts/consult_ai_team.py \
   --tool all \
   --mode explore \
+  --role implementation-review \
   --profile fast \
   --timeout 600 \
-  --output-dir /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/TASK_ID/panda_replay/panda \
-  --prompt "SWE-bench task TASK_ID. Inspect the clean checkout and advise Codex. Do not edit files."
+  --output-dir /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay/panda \
+  --prompt-file /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay/panda_prompt.txt \
+  --workspace /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace
 ```
+
+The prompt asks for a contract map, local test evidence, likely evaluator assertions, recommendation, alternative, risks, falsifiers, and verification plan. It must not include gold `patch`, `test_patch`, `FAIL_TO_PASS`, hidden test source, target commit details, raw commit SHAs, or hardness metadata.
 
 Read `evidence.json` and `{tool}.summary.json` first. Inspect raw logs only when necessary. Codex remains the only editor.
 
@@ -129,7 +159,9 @@ python3 scripts/panda_eval.py record \
   --tests-passed true \
   --classification accepted \
   --wall-seconds 900 \
-  --panda-output-dir /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/TASK_ID/panda_replay/panda \
+  --panda-output-dir /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay/panda \
+  --workspace-metadata-path /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace_metadata.json \
+  --workspace-isolated true \
   --evidence-used \
   --patch-path /path/to/patch.diff \
   --test-output-path /path/to/swebench-report.json
@@ -145,13 +177,13 @@ Use second pass only when the first Panda replay succeeded, Codex produced a pat
 python3 scripts/panda_eval.py prepare-second-pass \
   --run-dir /private/tmp/panda-eval/YYYYMMDD-hard-local \
   --task-id TASK_ID \
-  --first-pass-panda-output-dir /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/TASK_ID/panda_replay/panda \
+  --first-pass-panda-output-dir /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay/panda \
   --patch-path /path/to/patch.diff \
   --test-output-path /path/to/swebench-report-or-stdout.log \
-  --workspace /path/to/clean/task/repo
+  --workspace /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace
 ```
 
-The command writes `panda_prompt.txt`, records prompt metadata, and prints the exact `consult_ai_team.py --mode explore` command to run. The prompt includes capped task context, first-pass evidence summaries, a capped patch excerpt, failing test names, and nearby error lines. It references artifact paths instead of embedding raw logs, and it must not include gold `patch` or `test_patch` content or hidden-test-derived hardness stats.
+The command writes `panda_prompt.txt`, records prompt metadata, and prints the exact `consult_ai_team.py --mode explore --role debugging` command to run. The prompt includes capped task context, first-pass evidence summaries, a capped patch excerpt, failing test names, and nearby error lines. It references artifact paths instead of embedding raw logs, and it must not include gold `patch` or `test_patch` content, raw commit SHAs, target commit details, or hidden-test-derived hardness stats.
 
 Record second-pass results separately:
 
@@ -164,8 +196,10 @@ python3 scripts/panda_eval.py record \
   --accepted false \
   --classification failed_tests \
   --wall-seconds 900 \
-  --panda-output-dir /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/TASK_ID/panda_replay_second_pass/panda \
-  --second-pass-prompt-path /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/TASK_ID/panda_replay_second_pass/panda_prompt.txt \
+  --panda-output-dir /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay_second_pass/panda \
+  --second-pass-prompt-path /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay_second_pass/panda_prompt.txt \
+  --workspace-metadata-path /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace_metadata.json \
+  --workspace-isolated true \
   --evidence-used \
   --patch-path /path/to/patch.diff \
   --test-output-path /path/to/swebench-report-or-stdout.log
@@ -206,5 +240,6 @@ Interpretation:
 - Panda is promising if it rescues at least 25% of clean Codex-struggle tasks.
 - Treat second-pass rescue metrics as exploratory until at least five clean Codex-struggle tasks have second-pass attempts after a matching first Panda replay failed to pass.
 - Do not count a second-pass success as an incremental rescue unless the same task has a matching first-pass `panda_replay` record that did not pass.
+- Treat isolated contract-first reruns as a new lab signal. Do not overwrite earlier full-clone results or compare them as a strict apples-to-apples run.
 - Panda is not proven better if Codex finds too few struggles, Panda only ties, or evidence is unused.
 - Runner reliability target is zero malformed/missing artifacts and under 10% runner failure rate.

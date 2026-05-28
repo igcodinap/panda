@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "task_id": "instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da",
+  "variant": "panda_replay_second_pass",
+  "tests_passed": false,
+  "accepted": false,
+  "regression": false,
+  "classification": "contaminated",
+  "contaminated": true,
+  "benchmark_invalid": false,
+  "wall_seconds": 210.0,
+  "panda_run_failed": false,
+  "claude_budget_failure": false,
+  "evidence_used": false,
+  "notes": "Second-pass Panda ran operationally cleanly, but one collaborator appears to have inspected or inferred the target commit/ground-truth patch. This invalidates the attempt for clean solve-rate claims. Future second-pass runs need base-only/no-git or target-commit-inaccessible workspaces plus stricter prompt guardrails.",
+  "patch_path": null,
+  "test_output_path": null,
+  "recorded_at": "2026-05-26T23:03:43.709757+00:00",
+  "panda_direction_correct": true,
+  "panda_missed_contract": false,
+  "codex_implementation_error": false,
+  "evidence_was_actionable": false,
+  "second_pass_used": true,
+  "second_pass_prompt_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/panda_replay_second_pass/panda_prompt.txt",
+  "advice_quality_notes": "Recorded as contaminated: second-pass Panda output referenced the target/ground-truth commit and specific file-change counts, violating the no-gold-leakage rule. Do not use this as a clean rescue attempt.",
+  "panda_output_dir": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/panda_replay_second_pass/panda",
+  "panda_core_status": {
+    "claude": {
+      "status": "success",
+      "returncode": 0,
+      "timed_out": false,
+      "budget_failure": false
+    },
+    "opencode": {
+      "status": "success",
+      "returncode": 0,
+      "timed_out": false,
+      "budget_failure": false
+    },
+    "qwen": {
+      "status": "success",
+      "returncode": 0,
+      "timed_out": false,
+      "budget_failure": false
+    }
+  },
+  "panda_artifact_failures": []
+}

@@ -906,9 +906,10 @@ Please inspect the workspace and return:
 - Falsifiers or uncertainties: what would prove this advice wrong.
 - Verification plan: focused tests or commands Codex should run.
 """
-    prompt_version = getattr(args, "prompt_version", 1)
-    if prompt_version == 2:
-        prompt = f"{prompt}\n{contract_first_v2_addendum()}"
+    prompt_version = getattr(args, "prompt_version", 2)
+    if prompt_version != 2:
+        raise SystemExit("Panda V1 first-pass prompts were removed; use prompt version 2.")
+    prompt = f"{prompt}\n{contract_first_v2_addendum()}"
     prompt, prompt_redacted_count = redact_commit_shas(prompt)
     prompt, prompt_truncated = clip_text(prompt, FIRST_PASS_PROMPT_MAX_CHARS)
     metadata = {
@@ -966,8 +967,7 @@ def prepare_first_pass(args: argparse.Namespace) -> int:
         "--workspace",
         str(inputs["workspace"]),
     ]
-    if getattr(args, "prompt_version", 1) == 2:
-        command.extend(["--protocol", "v2"])
+    command.extend(["--protocol", "v2"])
     metadata["prompt_path"] = str(prompt_path)
     metadata["command"] = command
     write_json(output_dir / "prompt_metadata.json", metadata)
@@ -1384,6 +1384,7 @@ def prepare_second_pass(args: argparse.Namespace) -> int:
     ]
     if inputs["workspace"]:
         command.extend(["--workspace", str(inputs["workspace"])])
+    command.extend(["--protocol", "v2"])
     metadata["prompt_path"] = str(prompt_path)
     metadata["command"] = command
     write_json(output_dir / "prompt_metadata.json", metadata)
@@ -2175,7 +2176,7 @@ def build_parser() -> argparse.ArgumentParser:
     first_pass_parser.add_argument("--profile", default=DEFAULT_PROFILE)
     first_pass_parser.add_argument("--timeout", type=int, default=HARD_LOCAL_TIMEOUT)
     first_pass_parser.add_argument("--role", default="implementation-review")
-    first_pass_parser.add_argument("--prompt-version", type=int, choices=(1, 2), default=1)
+    first_pass_parser.add_argument("--prompt-version", type=int, choices=(2,), default=2)
     first_pass_parser.add_argument("--strict-workspace", action="store_true")
     first_pass_parser.set_defaults(func=prepare_first_pass)
 

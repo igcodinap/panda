@@ -52,7 +52,8 @@ The runner:
 - Allows shell commands in `explore` mode for inspection, testing, builds, logs, git state, and research.
 - Asks collaborators to avoid source edits and to report any changed files if a command unexpectedly modifies the workspace.
 - Writes each one-shot response plus a manifest under `/tmp/panda-consults/...` unless `--output-dir` is provided.
-- Writes compact JSON artifacts next to the raw outputs: `evidence.json`, `{tool}.summary.json`, and, for sessions, `turn_summary.json`. Read these first; inspect raw `{tool}.txt` logs only when details are needed.
+- Uses the V2 protocol by default. V2 preserves the compact evidence layer and writes contract sidecars for every normal consultation.
+- Writes compact JSON artifacts next to the raw outputs: `evidence.json`, `{tool}.summary.json`, `panda_contracts.v2.json`, and, for sessions, `turn_summary.json`. Contract-falsifier runs write `panda_falsifier.v2.json` instead of `panda_contracts.v2.json`. Read these first; inspect raw `{tool}.txt` logs only when details are needed.
 
 Use `--prompt-file` for longer prompts, `--workspace` to target a repo explicitly, `--approval-mode supervised` to disable collaborator auto-approval, `--execution parallel` or `--execution sequential` to override auto execution, `--profile fast|balanced|deep` to choose cost/depth, and `--dry-run` to inspect commands without calling the tools. Use `--session` to create a persistent Panda session, `--session <id>` to continue it, `--session-dir` to choose where session state lives, and `--straggler-timeout` to bound how long a session turn waits for lagging collaborators after another collaborator has finished. Use `--no-session-memory` or `PANDA_NO_SESSION_MEMORY=1` to skip previous-turn summary injection. Use `--serialize-opencode` or `PANDA_SERIALIZE_OPENCODE=1` only as a diagnostic fallback if GLM/Qwen appear to contend on OpenCode runtime state; OpenCode-backed tools still run in parallel by default. Environment overrides are also supported with `AI_TEAM_EXECUTION`, `AI_TEAM_APPROVAL_MODE`, `PANDA_NO_SESSION_MEMORY`, `PANDA_SERIALIZE_OPENCODE`, and `OPENCODE_MODEL`; invalid values are rejected.
 
@@ -162,7 +163,7 @@ Please return:
 - Verification plan
 ```
 
-For deeper prompt patterns, read `references/prompt-patterns.md`.
+For deeper prompt patterns, read `references/prompt-patterns.md`. For the Panda V2 philosophy, scientific rationale, architecture, benchmark experience, and token-cost discussion, read `references/panda-v2-philosophy.md`.
 
 ## Guardrails
 
@@ -190,7 +191,7 @@ For deeper prompt patterns, read `references/prompt-patterns.md`.
 
 ## Evaluation
 
-Use `scripts/panda_eval.py` for nightly reliability and SWE-bench-style pilot runs. It creates run manifests, validates Panda artifacts, records `codex_alone` versus `panda_explore` results, and summarizes pass rate, Panda runner failure rate, Claude budget failure rate, evidence use rate, and time to green. For harder local comparisons, use hard-local mode with `codex_alone_scout`, `panda_replay`, and optional `panda_replay_second_pass` to measure failure-to-success rescue rate on Codex-struggle tasks. Use `prepare-second-pass` after a successful first Panda replay when Codex produced a patch but tests or the official evaluator failed; it builds a bounded recovery prompt from first-pass evidence, the candidate patch, and failing output. Treat Claude quota, budget, rate-limit, auth, billing, or usage exhaustion as a Panda failure. See `references/evaluation-nightly.md` and `references/evaluation-hard-local.md` for the runbooks.
+Use `scripts/panda_eval.py` for nightly reliability and SWE-bench-style pilot runs. It creates run manifests, validates Panda artifacts, records `codex_alone` versus `panda_explore` results, and summarizes pass rate, Panda runner failure rate, Claude budget failure rate, evidence use rate, and time to green. For harder local comparisons, use hard-local mode with `codex_alone_scout`, `panda_replay`, and optional `panda_replay_second_pass` to measure failure-to-success rescue rate on Codex-struggle tasks. For benchmark replays, prepare a no-`.git` workspace with `prepare-workspace`, verify it with `check-workspace`, then use `prepare-first-pass` to generate a bounded contract-first Panda prompt before Codex edits. Use `prepare-second-pass` after a successful first Panda replay when Codex produced a patch but tests or the official evaluator failed; it builds a bounded recovery prompt from first-pass evidence, the candidate patch, and failing output. Treat Claude quota, budget, rate-limit, auth, billing, or usage exhaustion as a Panda failure. See `references/evaluation-nightly.md` and `references/evaluation-hard-local.md` for the runbooks.
 
 ## Adaptive Reporting
 

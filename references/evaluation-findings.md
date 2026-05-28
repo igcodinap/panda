@@ -139,3 +139,188 @@ Portable proof artifacts:
 ## Current Interpretation
 
 Panda is already credible as a review and confidence amplifier. The runner produced usable evidence reliably, and collaborator agreement was often valuable. We have not yet proven Panda improves solve rate over Codex alone. The next evaluation should intentionally seek harder tasks where Codex-alone has room to fail.
+
+## 2026-05-26 Hard-Local Continuation
+
+Additional scout tasks were run from the same hard-local directory:
+
+```text
+/private/tmp/panda-eval/20260525-hard-local
+```
+
+New scout/replay results:
+
+| Task | Repo | Codex-alone scout | Panda replay | Notes |
+| --- | --- | --- | --- | --- |
+| `instance_qutebrowser__qutebrowser-3fd8e12949b8feda401930574facf09dd4180bba` | `qutebrowser/qutebrowser` | `accepted` | not replayed | Official evaluator accepted after command rename/API compatibility fixes. Local pytest was blocked by missing qutebrowser pytest plugins, so the official Docker evaluator carried the verdict. |
+| `instance_future-architect__vuls-3c1489e588dacea455ccf4c352a3b1006902e2d4` | `future-architect/vuls` | `accepted` | not replayed | Official evaluator accepted after the final allowed scout loop. A raw-sample metadata typo briefly produced false `0.0` accuracy despite all selected tests passing; corrected `pass_to_pass` restored `1.0`. |
+| `instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da` | `navidrome/navidrome` | `failed_tests` | `failed_tests` | First-pass Panda ran cleanly and evidence was used, but it recommended only username canonicalization. Official tests revealed the deeper `Player.UserId` / `Username` / `IP` API contract. |
+| same Navidrome task | `navidrome/navidrome` | already a struggle | second pass contaminated | Second-pass Panda was operationally clean but one collaborator referenced target/ground-truth commit details, so the attempt is excluded from clean rescue claims. |
+
+Updated clean hard-local metrics:
+
+- Clean scout tasks: 7.
+- Accepted clean scout tasks: 4.
+- Clean Codex scout pass rate: 57.1%.
+- Codex struggle tasks found: 3.
+- Panda replay tasks run: 3.
+- Panda replay accepted tasks: 0.
+- Failure-to-success rescue rate: 0.0%.
+- Panda runner failure rate: 0.0%.
+- Claude budget/rate/auth failure rate: 0.0%.
+- Contaminated tasks/attempts excluded from clean claims: 2.
+
+New lessons:
+
+- First-pass Panda can still miss structural API contracts when the issue text points at a simpler surface fix. The Navidrome replay is a clean example: all cores agreed on canonical username handling, local base tests passed, but official tests required a deeper player identity/schema change.
+- The second-pass workflow did surface the deeper contract, but this particular run is not clean because the target commit was accessible in the full local Git clone and a collaborator appears to have inspected or inferred ground-truth details.
+- Future benchmark workspaces need stronger anti-leakage isolation. Prefer base-only checkouts with the target commit unavailable, or no-`.git` source copies for Panda exploration. Prompt rules alone are not enough.
+- Patch artifact generation must include untracked files. For eval candidates with new files, use intent-to-add or an equivalent patch builder before `git diff`; otherwise migrations or new source files can be silently omitted.
+- Raw-sample metadata matters. `fail_to_pass` and `pass_to_pass` must remain correctly stringified Python lists for the current SWE-bench Pro evaluator.
+
+Portable proof artifacts for these continuation results were added under:
+
+```text
+references/evaluation-results/20260525-hard-local/
+```
+
+## Contract-First Rerun Protocol
+
+The next hard-local rerun should use the additive contract-first workflow rather than the earlier thin first-pass prompt:
+
+- Prepare Panda-visible workspaces with `prepare-workspace`, which removes `.git`, nested git files, VCS metadata traces, and common transient caches.
+- Run `check-workspace --strict` before Panda sees a benchmark workspace.
+- Generate first-pass Panda prompts with `prepare-first-pass` so collaborators explicitly review API contracts, public/local tests, evaluator-like assertions, falsifiers, and verification plans.
+- Keep raw commit SHAs, target commit details, gold `patch`, gold `test_patch`, `FAIL_TO_PASS`, hidden test source, and hardness metadata out of Panda prompts.
+- Record `workspace_metadata_path`, `workspace_isolated`, contamination status, evidence-used status, advice quality, and budget failures for each isolated rerun.
+- Treat the isolated contract-first results as a new lab signal rather than an apples-to-apples replacement for the earlier full-clone attempts.
+
+## 2026-05-26 Contract-First First-Pass Rerun
+
+Run directory:
+
+```text
+/private/tmp/panda-eval/20260526-contract-first-v2
+```
+
+Protocol:
+
+- Real Panda first-pass runs only, using `prepare-workspace`, `check-workspace --strict`, and `prepare-first-pass`.
+- Five previously used benchmark cases were run from `git archive` base exports with no `.git` in the Panda-visible workspace.
+- No Codex re-solve and no official Docker evaluator pass were run in this phase, so these records are evidence/reliability datapoints, not solve-rate outcomes.
+- Result records are intentionally marked `classification: low_confidence` and `accepted: false` to avoid overstating benchmark success.
+
+Observed result:
+
+- Panda first-pass runs completed for all 5 tasks.
+- Panda runner failure rate: 0.0%.
+- Claude budget/rate/auth failure rate: 0.0%.
+- Evidence use rate: 100.0%.
+- Contamination count: 0.
+- Strict workspace checks passed before Panda saw each workspace.
+
+Implementation issues found during the rerun:
+
+- Panda review found that the workspace gold-field scan only checked root JSON files. This was fixed by scanning JSON recursively and adding a nested JSON leakage test.
+- The first benchmark setup exposed a safe-path collision: two Flipt task IDs both collapsed to `instance_flipt-io__flipt-_redacted-sha`. This was fixed by appending a short deterministic hash suffix that does not expose the commit SHA.
+- The internal suite passed after both fixes: 99 tests.
+
+Early evidence-quality notes:
+
+- Qutebrowser: contract-first Panda produced actionable command-renaming guidance, including deprecated aliases and hardcoded command-name call sites.
+- Vuls: contract-first Panda produced actionable CVSS severity fallback guidance and named `MaxCvss3Score`, `Cvss3Scores`, filtering, grouping, and report propagation.
+- Flipt audit task: contract-first Panda produced a broader package/config/schema/interceptor implementation map than the earlier thin prompt.
+- Navidrome: the new prompt improved the advice from only surface username canonicalization toward authenticated-user/context identity flow, but it still did not clearly prove the deeper `Player.UserId`/schema contract would be solved. This remains a candidate for a full solve plus second-pass evaluation.
+
+Portable proof artifacts:
+
+```text
+references/evaluation-results/20260526-contract-first-v2/
+```
+
+## 2026-05-27 Navidrome Diagnosis Replay
+
+Run directory:
+
+```text
+/private/tmp/panda-eval/20260527-diagnosis
+```
+
+Protocol:
+
+- Replayed the prior clean Codex-struggle task `instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da`.
+- Used the isolated contract-first Panda first-pass output from `20260526-contract-first-v2`.
+- Codex edited from a clean base workspace and ran the official SWE-bench Pro local Docker evaluator.
+- No Panda second pass was used for the accepted patch; official evaluator failures were enough to expose the missing API contract details.
+
+Result:
+
+- Official evaluator accepted the final candidate patch (`navidrome_first_pass_v5`).
+- Selected tests: `TestCore`, `TestPersistence`.
+- Panda runner failure rate for this replay: 0.0%.
+- Claude budget/rate/auth failure: 0.
+- Contamination status: clean/no `.git` Panda workspace.
+
+What Panda helped with:
+
+- Panda first pass correctly pushed the solution toward authenticated-user/player registration rather than treating the raw Subsonic username as authoritative.
+- The first-pass evidence was actionable enough to start in the right subsystem: `core/players.go`, `server/subsonic/middlewares.go`, and `persistence/player_repository.go`.
+
+What Panda missed:
+
+- Panda did not identify the exact target API shape: `Player.UserId`, `Player.Username`, and `Player.IP`.
+- Panda did not identify that `player.user_name` needed to stop being the ownership foreign key; persistence had to move permission and matching behavior to stable `user_id`.
+- The official evaluator feedback, not Panda, exposed the field-name and persistence-mapping contract.
+
+Interpretation:
+
+- This is the first clean local rescue signal after the contract-first prompt change: a prior Codex-struggle task became accepted when Codex used Panda first-pass evidence plus official evaluator feedback.
+- It is not a broad benchmark claim. It is one task, and the solve required multiple evaluator-feedback iterations.
+- The most useful tuning signal is clear: Panda prompts should more aggressively ask collaborators to infer public model/API field names, persistence column mappings, and foreign-key/permission contracts, not only the obvious runtime bug.
+
+Portable proof artifacts:
+
+```text
+references/evaluation-results/20260527-diagnosis/
+```
+
+## 2026-05-27 Flipt ECR Diagnosis Replay
+
+Run directory:
+
+```text
+/private/tmp/panda-eval/20260527-diagnosis
+```
+
+Protocol:
+
+- Replayed the prior clean Codex-struggle task `instance_flipt-io__flipt-96820c3ad10b0b2305e8877b6b303f7fafdf815f`.
+- Used the isolated contract-first Panda first-pass output from `20260526-contract-first-v2`.
+- Codex edited from a clean base workspace and ran the official SWE-bench Pro local Docker evaluator.
+- No Panda second pass was used.
+
+Result:
+
+- Accepted after one compile-contract iteration (`flipt_ecr_first_pass_v2`).
+- Selected tests passed in the container: `TestFile`, `TestStore_FetchWithECR`, `TestAuthenicationTypeIsValid`, `TestDefaultClientFunc`, `TestECRCredential`, `TestCredential`, `TestPrivateClient`, and `TestPublicClient`, plus the surrounding OCI regression tests selected by the harness.
+- The raw JSONL sample used uppercase `FAIL_TO_PASS`/`PASS_TO_PASS`; the local evaluator expected lowercase stringified `fail_to_pass`/`pass_to_pass`. A normalized scorer-only copy was used after confirming the same selected tests already passed.
+- Panda runner failure rate for this replay: 0.0%.
+- Claude budget/rate/auth failure: 0.
+- Contamination status: clean/no `.git` Panda workspace.
+
+What Panda helped with:
+
+- Panda first pass correctly identified the core direction: split public and private ECR auth, add `ecrpublic`, use request context, cache credentials by expiry, and avoid relying only on the default ORAS auth path.
+- The evidence was actionable enough to choose the right subsystem and implement a deeper credential-store design rather than only patching the old inline private ECR client.
+
+What Panda missed:
+
+- Panda did not provide exact hidden-test API names such as `cacheItem` and `CredentialsStore.extractCredential`.
+- Panda did not settle the compatibility shape around the internal `credentialFunc`: existing tests still expected it to be directly callable, while the new workflow benefited from an `Execute` method.
+- The official evaluator feedback exposed those exact type/method naming contracts.
+
+Interpretation:
+
+- This is the second clean local rescue signal in the diagnosis run: another prior Codex-struggle task became accepted when Codex used contract-first Panda evidence plus bounded evaluator feedback.
+- The sample is still tiny, but the pattern is getting clearer: Panda is helpful at pushing Codex toward the right architectural region, while evaluator feedback remains necessary for exact hidden-test API surface.
+- The next Panda prompt tweak should ask collaborators to explicitly infer unexported type names, test seam names, method names, and backward-compatibility constraints from nearby tests and local conventions.

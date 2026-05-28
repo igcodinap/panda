@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "eval_mode": "hard-local",
+  "created_at": "2026-05-27T02:25:52.915687+00:00",
+  "panda_commit": "89f5db911b5d8fd11e1964f380bb1da7558c3557",
+  "task_ids": [
+    "instance_qutebrowser__qutebrowser-3fd8e12949b8feda401930574facf09dd4180bba",
+    "instance_future-architect__vuls-3c1489e588dacea455ccf4c352a3b1006902e2d4",
+    "instance_flipt-io__flipt-96820c3ad10b0b2305e8877b6b303f7fafdf815f",
+    "instance_flipt-io__flipt-e50808c03e4b9d25a6a78af9c61a3b1616ea356b",
+    "instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da"
+  ],
+  "variants": [
+    "codex_alone_scout",
+    "panda_replay",
+    "panda_replay_second_pass"
+  ],
+  "panda": {
+    "mode": "explore",
+    "tool": "all",
+    "profile": "fast",
+    "timeout": 600,
+    "straggler_timeout": 120,
+    "claude_budget_failure_counts_as_failure": true
+  },
+  "success_bar": {
+    "reliability_canary_artifact_failures": 0,
+    "external_task_count": 5,
+    "stop_on_budget_exhaustion": true
+  },
+  "hard_local": {
+    "target_candidate_count": 20,
+    "expansion_candidate_count": 10,
+    "max_candidate_count": 30,
+    "repo_cap": 3,
+    "scout_budget_minutes": 20,
+    "max_test_loops": 3,
+    "panda_replay_limit": 8,
+    "primary_metric": "failure_to_success_rescue_rate"
+  },
+  "budget_failures": []
+}

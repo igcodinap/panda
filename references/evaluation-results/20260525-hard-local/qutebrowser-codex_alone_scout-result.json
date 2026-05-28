@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "task_id": "instance_qutebrowser__qutebrowser-3fd8e12949b8feda401930574facf09dd4180bba",
+  "variant": "codex_alone_scout",
+  "tests_passed": true,
+  "accepted": true,
+  "regression": false,
+  "classification": "accepted",
+  "contaminated": false,
+  "benchmark_invalid": false,
+  "wall_seconds": 960.0,
+  "panda_run_failed": false,
+  "claude_budget_failure": false,
+  "evidence_used": false,
+  "notes": "Accepted by official SWE-bench Pro local Docker evaluator. The initial scout patch passed syntax but failed the selected tests because hidden expectations referenced the renamed Python handler cmd_repeat_last; Codex updated the handler names while preserving old aliases. The qutebrowser raw sample for this run was kept redacted with blank patch/test_patch fields; two evaluator reruns were due to local raw-sample field-shape cleanup, not task failures.",
+  "patch_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_qutebrowser__qutebrowser-3fd8e12949b8feda401930574facf09dd4180bba/codex_alone_scout/patch.diff",
+  "test_output_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_qutebrowser__qutebrowser-3fd8e12949b8feda401930574facf09dd4180bba/codex_alone_scout/pro_eval/instance_qutebrowser__qutebrowser-3fd8e12949b8feda401930574facf09dd4180bba/codex_alone_scout_stdout.log",
+  "recorded_at": "2026-05-26T22:19:59.590230+00:00"
+}
