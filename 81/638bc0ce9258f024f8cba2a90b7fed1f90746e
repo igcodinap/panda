@@ -1,0 +1,29 @@
+scripts/consult_ai_team.py
+  s_01cd10bc393510::t_ee63af30a6e9f1 2262-2267,2269
+CONTRIBUTING.md
+  s_01cd10bc393510::t_87fbe6ad8c84db 18
+agents/openai.yaml
+  s_01cd10bc393510::t_87fbe6ad8c84db 3-4
+references/evaluation-nightly.md
+  s_01cd10bc393510::t_87fbe6ad8c84db 60-63
+tests/test_consult_ai_team.py
+  s_01cd10bc393510::t_4929933bad25e0 101-108
+references/evaluation-hard-local.md
+  s_01cd10bc393510::t_87fbe6ad8c84db 148-151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "81638bc0ce9258f024f8cba2a90b7fed1f90746e",
+  "prompts": {},
+  "sessions": {
+    "s_01cd10bc393510": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e748a-8bd9-7aa0-84bb-6a5ad619fb86",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
