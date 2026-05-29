@@ -1,0 +1,49 @@
+README.md
+  s_01cd10bc393510::t_8a486e3c7d3bec 105-106
+  s_01cd10bc393510::t_9c2df539dbcd39 76-78
+  s_01cd10bc393510::t_c83d2293436432 29-31
+  s_01cd10bc393510::t_61b09d36e1c11a 34-42,51,55-56,71-75
+  s_01cd10bc393510::t_c4c9a5aca892e8 83
+scripts/consult_ai_team.py
+  s_01cd10bc393510::t_6714f5e81b7b2a 74-81
+  s_01cd10bc393510::t_a88ed7f26be32a 190-194
+  s_01cd10bc393510::t_d3f9b235786193 778-820,865,867-870,873-874
+  s_01cd10bc393510::t_5ef56bdccef59e 313-314
+  s_01cd10bc393510::t_2cd74c4816ab9a 576-609,834
+tests/test_consult_ai_team.py
+  s_01cd10bc393510::t_795265cc6aa3ec 95,97,99,402,408-409,632,639,654
+  s_01cd10bc393510::t_7b2525a848f146 686-690,765-768,805-808,898-900
+  s_01cd10bc393510::t_401ffc8ab181c5 1756-1770,1777-1778
+  s_01cd10bc393510::t_9497504e4cab98 973-994
+  s_01cd10bc393510::t_c4b865804dd2bc 733-750
+  s_01cd10bc393510::t_e8a2cb8bf2c364 109-119
+  s_01cd10bc393510::t_0b236264b6af29 338,867,879-882
+  s_01cd10bc393510::t_b2f08d99ba8445 1634
+  s_01cd10bc393510::t_115e402e842ab6 1697
+  s_01cd10bc393510::t_59daad4cf09328 1779-1781
+  s_01cd10bc393510::t_acc97feca969c9 1675
+  s_01cd10bc393510::t_026e0ac36f617b 1785
+  s_01cd10bc393510::t_c0afb6fd00c187 787,794-795,868-878
+SKILL.md
+  s_01cd10bc393510::t_5973241087f866 10
+  s_01cd10bc393510::t_746f45076fc80f 44-46
+  s_01cd10bc393510::t_aca591d0915622 52-55,101,106-107,121
+  s_01cd10bc393510::t_ac92c2107f13cc 69
+  s_01cd10bc393510::t_d0beab1e47f2ed 110,200-202
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5f7cb476c53bcaec8e380b10314b0b2fc4c8515a",
+  "prompts": {},
+  "sessions": {
+    "s_01cd10bc393510": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e748a-8bd9-7aa0-84bb-6a5ad619fb86",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
