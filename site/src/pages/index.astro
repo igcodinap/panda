@@ -5,6 +5,8 @@ const repoUrl = "https://github.com/igcodinap/panda";
 const baseUrl = import.meta.env.BASE_URL.endsWith("/")
   ? import.meta.env.BASE_URL
   : `${import.meta.env.BASE_URL}/`;
+const logoUrl = `${baseUrl}panda-logo.png?v=20260529-style`;
+const systemCardUrl = `${baseUrl}panda-system-card.svg`;
 const sources = [
   {
     title: "Gao et al., Single-agent or Multi-agent Systems? Why Not Both?",
@@ -89,14 +91,17 @@ const sources = [
       name="description"
       content="Panda is a local consultation runner that uses independent advisors, structured artifacts, and tests to improve Codex performance where solo reasoning is brittle."
     />
+    <link rel="icon" type="image/png" href={logoUrl} />
   </head>
   <body>
     <div class="site-shell">
       <header class="topbar">
         <div class="topbar-inner">
           <a class="brand" href="#top" aria-label="Panda home">
-            <span class="brand-mark">P</span>
-            <span>panda</span>
+            <span class="brand-mark" aria-hidden="true">
+              <img src={logoUrl} width="48" height="43" alt="" />
+            </span>
+            <span class="brand-word">panda</span>
           </a>
           <nav class="nav" aria-label="Primary navigation">
             <a href="#workflow">Workflow</a>
@@ -110,11 +115,15 @@ const sources = [
 
       <main id="top">
         <section class="hero" aria-labelledby="hero-title">
-          <div>
-            <p class="eyebrow">Experience-based. Scientifically grounded. Codex-centered.</p>
+          <div class="hero-content">
+            <p class="eyebrow">
+              <span>Experience-based</span>
+              <span>scientifically grounded</span>
+              <span>Codex-centered</span>
+            </p>
             <h1 id="hero-title">
               panda is not a panda.
-              <span>it is a MAS for leveraging Codex weak spots where it matters.</span>
+              <span>it is a MAS system for leveraging Codex weak spots where it matters.</span>
             </h1>
             <p class="hero-copy">
               Panda runs independent model consultations around a Codex task, extracts structured contracts,
@@ -125,28 +134,68 @@ const sources = [
               <a class="ghost-button" href="#research">Read the sources</a>
             </div>
             <div class="hero-stat-row" aria-label="Panda principles">
-              <div class="hero-stat">
-                <strong>Independent</strong>
-                <span>advisors inspect without editing</span>
+              <div class="hero-stat accent-lime">
+                <span>01</span>
+                <strong>Independent advisors</strong>
+                <p>inspect without editing</p>
               </div>
-              <div class="hero-stat">
-                <strong>Structured</strong>
-                <span>contracts preserve pressure</span>
+              <div class="hero-stat accent-cyan">
+                <span>02</span>
+                <strong>Structured contracts</strong>
+                <p>preserve useful pressure</p>
               </div>
-              <div class="hero-stat">
-                <strong>Verified</strong>
-                <span>tests decide what survives</span>
+              <div class="hero-stat accent-pink">
+                <span>03</span>
+                <strong>Tests decide</strong>
+                <p>what survives integration</p>
               </div>
             </div>
           </div>
           <div class="hero-media">
-            <img
-              src={`${baseUrl}panda-system-card.svg`}
-              width="1280"
-              height="820"
-              alt="Panda advisor panes feeding contracts into Codex integration and test verification"
-            />
+            <div class="mark-panel">
+              <div class="mark-panel-header">
+                <span>panda / v1.0</span>
+                <span>bounded MAS</span>
+              </div>
+              <div class="mark-lockup">
+                <img src={logoUrl} width="900" height="797" alt="Panda line drawing logo" />
+                <div>
+                  <strong>not mascot.</strong>
+                  <span>pressure system for the parts of a Codex task where one pass gets brittle.</span>
+                </div>
+              </div>
+            </div>
+            <div class="system-preview">
+              <img
+                src={systemCardUrl}
+                width="1280"
+                height="820"
+                alt="Panda advisor panes feeding contracts into Codex integration and test verification"
+              />
+            </div>
+            <div class="signal-grid" aria-label="System properties">
+              <div>
+                <span>editor</span>
+                <strong>Codex</strong>
+              </div>
+              <div>
+                <span>advisor role</span>
+                <strong>pressure</strong>
+              </div>
+              <div>
+                <span>claim status</span>
+                <strong>tested</strong>
+              </div>
+            </div>
           </div>
+        </section>
+
+        <section class="thesis-strip" aria-label="Operating thesis">
+          <span>Operating thesis</span>
+          <p>
+            Independent advisors create pressure. Structured artifacts preserve it. Codex integrates. Tests
+            decide. Metrics teach the next prompt.
+          </p>
         </section>
 
         <section class="band" id="workflow">
