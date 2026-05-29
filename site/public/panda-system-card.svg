@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="820" viewBox="0 0 1280 820" role="img" aria-labelledby="title desc">
+  <title id="title">Panda consultation system diagram</title>
+  <desc id="desc">Three advisor panes feed structured contracts into a Codex integration pane, followed by tests and metrics.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#101417"/>
+      <stop offset="0.48" stop-color="#161b1f"/>
+      <stop offset="1" stop-color="#090c0e"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#1b2226"/>
+      <stop offset="1" stop-color="#0f1417"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="22" stdDeviation="26" flood-color="#000000" flood-opacity="0.38"/>
+    </filter>
+  </defs>
+  <rect width="1280" height="820" rx="24" fill="url(#bg)"/>
+  <g opacity="0.32">
+    <path d="M80 126H1200" stroke="#eef7f4" stroke-opacity="0.08"/>
+    <path d="M80 224H1200" stroke="#eef7f4" stroke-opacity="0.08"/>
+    <path d="M80 322H1200" stroke="#eef7f4" stroke-opacity="0.08"/>
+    <path d="M80 420H1200" stroke="#eef7f4" stroke-opacity="0.08"/>
+    <path d="M80 518H1200" stroke="#eef7f4" stroke-opacity="0.08"/>
+    <path d="M80 616H1200" stroke="#eef7f4" stroke-opacity="0.08"/>
+    <path d="M178 70V750" stroke="#eef7f4" stroke-opacity="0.08"/>
+    <path d="M334 70V750" stroke="#eef7f4" stroke-opacity="0.08"/>
+    <path d="M490 70V750" stroke="#eef7f4" stroke-opacity="0.08"/>
+    <path d="M646 70V750" stroke="#eef7f4" stroke-opacity="0.08"/>
+    <path d="M802 70V750" stroke="#eef7f4" stroke-opacity="0.08"/>
+    <path d="M958 70V750" stroke="#eef7f4" stroke-opacity="0.08"/>
+    <path d="M1114 70V750" stroke="#eef7f4" stroke-opacity="0.08"/>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="70" y="70" width="1140" height="680" rx="18" fill="#0b0f11" stroke="#edf7f2" stroke-opacity="0.14"/>
+    <rect x="70" y="70" width="1140" height="54" rx="18" fill="#14191d"/>
+    <circle cx="102" cy="97" r="7" fill="#f08aaa"/>
+    <circle cx="126" cy="97" r="7" fill="#f3b861"/>
+    <circle cx="150" cy="97" r="7" fill="#66e3cc"/>
+    <text x="1106" y="102" fill="#73807c" font-family="SFMono-Regular, Consolas, monospace" font-size="15" text-anchor="end">panda/v2</text>
+
+    <g>
+      <rect x="106" y="164" width="292" height="142" rx="12" fill="url(#panel)" stroke="#edf7f2" stroke-opacity="0.12"/>
+      <text x="130" y="198" fill="#66e3cc" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="700">Advisor A</text>
+      <rect x="130" y="222" width="208" height="10" rx="5" fill="#edf7f2" opacity="0.18"/>
+      <rect x="130" y="248" width="232" height="10" rx="5" fill="#edf7f2" opacity="0.12"/>
+      <rect x="130" y="274" width="152" height="10" rx="5" fill="#f3b861" opacity="0.54"/>
+    </g>
+    <g>
+      <rect x="106" y="338" width="292" height="142" rx="12" fill="url(#panel)" stroke="#edf7f2" stroke-opacity="0.12"/>
+      <text x="130" y="372" fill="#8fb6ff" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="700">Advisor B</text>
+      <rect x="130" y="396" width="228" height="10" rx="5" fill="#edf7f2" opacity="0.18"/>
+      <rect x="130" y="422" width="184" height="10" rx="5" fill="#edf7f2" opacity="0.12"/>
+      <rect x="130" y="448" width="132" height="10" rx="5" fill="#66e3cc" opacity="0.54"/>
+    </g>
+    <g>
+      <rect x="106" y="512" width="292" height="142" rx="12" fill="url(#panel)" stroke="#edf7f2" stroke-opacity="0.12"/>
+      <text x="130" y="546" fill="#f08aaa" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="700">Advisor C</text>
+      <rect x="130" y="570" width="190" height="10" rx="5" fill="#edf7f2" opacity="0.18"/>
+      <rect x="130" y="596" width="238" height="10" rx="5" fill="#edf7f2" opacity="0.12"/>
+      <rect x="130" y="622" width="160" height="10" rx="5" fill="#8fb6ff" opacity="0.54"/>
+    </g>
+
+    <path d="M398 235C466 235 474 294 540 294" fill="none" stroke="#66e3cc" stroke-width="3" stroke-opacity="0.64"/>
+    <path d="M398 409C462 409 478 384 540 384" fill="none" stroke="#8fb6ff" stroke-width="3" stroke-opacity="0.64"/>
+    <path d="M398 583C466 583 474 480 540 480" fill="none" stroke="#f08aaa" stroke-width="3" stroke-opacity="0.64"/>
+
+    <g>
+      <rect x="540" y="220" width="238" height="350" rx="14" fill="#12181b" stroke="#edf7f2" stroke-opacity="0.14"/>
+      <text x="568" y="258" fill="#eff4f2" font-family="Inter, system-ui, sans-serif" font-size="20" font-weight="760">contracts</text>
+      <rect x="568" y="288" width="126" height="28" rx="6" fill="#66e3cc" opacity="0.18"/>
+      <text x="582" y="307" fill="#9ff5e6" font-family="SFMono-Regular, Consolas, monospace" font-size="13">claim</text>
+      <rect x="568" y="330" width="166" height="28" rx="6" fill="#f3b861" opacity="0.18"/>
+      <text x="582" y="349" fill="#f7d29d" font-family="SFMono-Regular, Consolas, monospace" font-size="13">risk</text>
+      <rect x="568" y="372" width="142" height="28" rx="6" fill="#8fb6ff" opacity="0.18"/>
+      <text x="582" y="391" fill="#c0d5ff" font-family="SFMono-Regular, Consolas, monospace" font-size="13">test</text>
+      <rect x="568" y="430" width="172" height="10" rx="5" fill="#edf7f2" opacity="0.16"/>
+      <rect x="568" y="458" width="122" height="10" rx="5" fill="#edf7f2" opacity="0.1"/>
+      <rect x="568" y="486" width="146" height="10" rx="5" fill="#edf7f2" opacity="0.1"/>
+      <text x="568" y="535" fill="#73807c" font-family="SFMono-Regular, Consolas, monospace" font-size="14">panda_contracts.v2.json</text>
+    </g>
+
+    <path d="M778 396C826 396 842 396 884 396" fill="none" stroke="#edf7f2" stroke-width="3" stroke-opacity="0.34"/>
+
+    <g>
+      <rect x="884" y="176" width="256" height="338" rx="14" fill="#151b1f" stroke="#edf7f2" stroke-opacity="0.16"/>
+      <text x="912" y="216" fill="#eff4f2" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="780">Codex integrates</text>
+      <rect x="912" y="252" width="176" height="12" rx="6" fill="#edf7f2" opacity="0.17"/>
+      <rect x="912" y="284" width="202" height="12" rx="6" fill="#edf7f2" opacity="0.11"/>
+      <rect x="912" y="316" width="132" height="12" rx="6" fill="#edf7f2" opacity="0.11"/>
+      <rect x="912" y="364" width="92" height="34" rx="7" fill="#66e3cc" opacity="0.2"/>
+      <text x="958" y="386" fill="#9ff5e6" font-family="SFMono-Regular, Consolas, monospace" font-size="13" text-anchor="middle">accept</text>
+      <rect x="1020" y="364" width="94" height="34" rx="7" fill="#f08aaa" opacity="0.18"/>
+      <text x="1067" y="386" fill="#f6bfd0" font-family="SFMono-Regular, Consolas, monospace" font-size="13" text-anchor="middle">reject</text>
+      <text x="912" y="472" fill="#73807c" font-family="SFMono-Regular, Consolas, monospace" font-size="14">one editor, one integrator</text>
+    </g>
+
+    <g>
+      <rect x="884" y="552" width="256" height="84" rx="12" fill="#101417" stroke="#edf7f2" stroke-opacity="0.14"/>
+      <text x="912" y="586" fill="#f3b861" font-family="Inter, system-ui, sans-serif" font-size="17" font-weight="760">tests decide</text>
+      <rect x="912" y="610" width="192" height="8" rx="4" fill="#66e3cc" opacity="0.64"/>
+    </g>
+  </g>
+</svg>

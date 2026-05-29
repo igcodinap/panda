@@ -21,6 +21,12 @@ dist/
 venv/
 env/
 
+# Node and static site builds
+node_modules/
+site/node_modules/
+site/dist/
+site/.astro/
+
 # Editor and OS noise
 .DS_Store
 .idea/

@@ -4,6 +4,8 @@ Panda is a local consultation runner for Codex. It asks independent collaborator
 cores to inspect a software task, produce evidence, map likely contracts, and
 surface risks before Codex edits the code.
 
+Project site: https://igcodinap.github.io/panda/
+
 The project goal is practical and research-driven: improve Codex performance on
 hard engineering work by using efficient model pressure where it helps, while
 avoiding the cost and coordination failure modes of unconstrained multi-agent

@@ -1,0 +1,379 @@
+---
+import "../styles/global.css";
+
+const repoUrl = "https://github.com/igcodinap/panda";
+const baseUrl = import.meta.env.BASE_URL.endsWith("/")
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
+const sources = [
+  {
+    title: "Gao et al., Single-agent or Multi-agent Systems? Why Not Both?",
+    href: "https://arxiv.org/abs/2505.18286",
+    claim: "Single-agent and multi-agent systems have complementary tradeoffs; coordination has real cost.",
+    implication: "Panda runs consultation only where independent pressure is likely to pay for itself.",
+    caveat: "It does not prove Panda's exact advisor shape improves coding outcomes."
+  },
+  {
+    title: "CooperBench, Why Coding Agents Cannot be Your Teammates Yet",
+    href: "https://arxiv.org/abs/2601.13295",
+    claim: "Peer coding agents can fail through coordination, commitment, and communication breakdowns.",
+    implication: "Panda advisors inspect independently. Codex remains the single editor and integrator.",
+    caveat: "The benchmark studies collaborative coding, not Panda's fan-out advisory pattern."
+  },
+  {
+    title: "Rethinking the Value of Multi-Agent Workflow",
+    href: "https://arxiv.org/abs/2601.12307",
+    claim: "Strong single-agent baselines can match homogeneous multi-agent workflows in many settings.",
+    implication: "Panda must earn its use through heterogeneous evidence and useful pressure, not agent count.",
+    caveat: "Codex alone remains the baseline Panda must beat or complement."
+  },
+  {
+    title: "Tran and Kiela, Equal Thinking-Token Budgets",
+    href: "https://arxiv.org/abs/2604.02460",
+    claim: "When reasoning budgets are equalized, single-agent systems can be more information-efficient.",
+    implication: "Panda treats cost, latency, and retained context as part of the result.",
+    caveat: "The result is about multi-hop reasoning, not local software consultation."
+  },
+  {
+    title: "Kim et al., Towards a Science of Scaling Agent Systems",
+    href: "https://arxiv.org/abs/2512.08296",
+    claim: "Agent-system scaling depends on task shape and architecture fit.",
+    implication: "Panda stays narrow: independent contract pressure, then single-editor integration.",
+    caveat: "Poor task selection can still waste time or amplify noise."
+  },
+  {
+    title: "MAST, Why Do Multi-Agent LLM Systems Fail?",
+    href: "https://arxiv.org/abs/2503.13657",
+    claim: "Multi-agent failures cluster around design, misalignment, and verification categories.",
+    implication: "V2 sidecars, parse warnings, and falsifier prompts keep failure modes visible.",
+    caveat: "Taxonomy helps expose failure; it does not eliminate it."
+  },
+  {
+    title: "Silo-Bench",
+    href: "https://arxiv.org/abs/2603.01045",
+    claim: "Agents can exchange information yet still fail to synthesize distributed state.",
+    implication: "Panda avoids advisor-to-advisor state merging and leaves synthesis to Codex plus tests.",
+    caveat: "The synthesis step still depends on evidence quality and verification discipline."
+  },
+  {
+    title: "SWE-bench Pro",
+    href: "https://arxiv.org/abs/2509.16941",
+    claim: "Long-horizon software tasks better stress realistic debugging and integration behavior.",
+    implication: "Panda evaluation should focus on tasks where consultation can actually matter.",
+    caveat: "Benchmark use must stay contamination-aware and conservative."
+  },
+  {
+    title: "Terminal-Bench",
+    href: "https://openreview.net/forum?id=a7Qa4CcHak",
+    claim: "Command-line tasks expose setup recovery, autonomy, and verification quality.",
+    implication: "Panda should be judged on evidence usefulness and recovery planning, not only final patches.",
+    caveat: "Current public Panda results are primarily SWE-bench-style summaries."
+  },
+  {
+    title: "OpenAI SWE-bench Verified Methodology Note",
+    href: "https://openai.com/index/why-we-no-longer-evaluate-swe-bench-verified/",
+    claim: "Saturated and contamination-prone coding benchmarks can stop measuring frontier capability.",
+    implication: "Panda reports evaluation status cautiously and separates observed experience from proven lift.",
+    caveat: "This is a methodology note, not an academic paper."
+  }
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Panda | MAS pressure for Codex</title>
+    <meta
+      name="description"
+      content="Panda is a local consultation runner that uses independent advisors, structured artifacts, and tests to improve Codex performance where solo reasoning is brittle."
+    />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <a class="brand" href="#top" aria-label="Panda home">
+            <span class="brand-mark">P</span>
+            <span>panda</span>
+          </a>
+          <nav class="nav" aria-label="Primary navigation">
+            <a href="#workflow">Workflow</a>
+            <a href="#usage">Usage</a>
+            <a href="#research">Research</a>
+            <a href="#evaluation">Evaluation</a>
+            <a href={repoUrl}>GitHub</a>
+          </nav>
+        </div>
+      </header>
+
+      <main id="top">
+        <section class="hero" aria-labelledby="hero-title">
+          <div>
+            <p class="eyebrow">Experience-based. Scientifically grounded. Codex-centered.</p>
+            <h1 id="hero-title">
+              panda is not a panda.
+              <span>it is a MAS for leveraging Codex weak spots where it matters.</span>
+            </h1>
+            <p class="hero-copy">
+              Panda runs independent model consultations around a Codex task, extracts structured contracts,
+              preserves useful disagreement, and lets Codex integrate only what survives local evidence and tests.
+            </p>
+            <div class="hero-actions">
+              <a class="button" href="#usage">Install Panda</a>
+              <a class="ghost-button" href="#research">Read the sources</a>
+            </div>
+            <div class="hero-stat-row" aria-label="Panda principles">
+              <div class="hero-stat">
+                <strong>Independent</strong>
+                <span>advisors inspect without editing</span>
+              </div>
+              <div class="hero-stat">
+                <strong>Structured</strong>
+                <span>contracts preserve pressure</span>
+              </div>
+              <div class="hero-stat">
+                <strong>Verified</strong>
+                <span>tests decide what survives</span>
+              </div>
+            </div>
+          </div>
+          <div class="hero-media">
+            <img
+              src={`${baseUrl}panda-system-card.svg`}
+              width="1280"
+              height="820"
+              alt="Panda advisor panes feeding contracts into Codex integration and test verification"
+            />
+          </div>
+        </section>
+
+        <section class="band" id="workflow">
+          <div class="section">
+            <div class="section-header">
+              <h2>The Panda loop</h2>
+              <p class="section-intro">
+                Panda is a bounded multi-agent system. It creates pressure around a task, but keeps authorship,
+                integration, and final judgment inside Codex.
+              </p>
+            </div>
+            <div class="loop" aria-label="Panda workflow">
+              <div class="loop-step">
+                <span>01</span>
+                <strong>Codex frames the task</strong>
+                <p>Context, constraints, and uncertainty are gathered before consultation starts.</p>
+              </div>
+              <div class="loop-step">
+                <span>02</span>
+                <strong>Advisors inspect</strong>
+                <p>Claude Code, GLM, and Qwen can review the same problem independently.</p>
+              </div>
+              <div class="loop-step">
+                <span>03</span>
+                <strong>Contracts are extracted</strong>
+                <p>Claims, risks, tests, and not-found statuses become compact artifacts.</p>
+              </div>
+              <div class="loop-step">
+                <span>04</span>
+                <strong>Codex integrates</strong>
+                <p>One editor accepts or rejects advice against local code and evidence.</p>
+              </div>
+              <div class="loop-step">
+                <span>05</span>
+                <strong>Tests decide</strong>
+                <p>Advice is not truth. The repository's checks and artifacts close the loop.</p>
+              </div>
+              <div class="loop-step">
+                <span>06</span>
+                <strong>Metrics teach</strong>
+                <p>Evaluation summaries shape the next prompt and protocol revision.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" aria-labelledby="fit-title">
+          <div class="section-header">
+            <h2 id="fit-title">Where it helps</h2>
+            <p class="section-intro">
+              Panda is not a default wrapper for every edit. It is for the tasks where a narrow first read
+              can be expensive.
+            </p>
+          </div>
+          <div class="pill-grid">
+            <div class="pill">
+              <strong>Architecture decisions</strong>
+              <p>Pressure-test boundaries, migration plans, and interface contracts before implementation.</p>
+            </div>
+            <div class="pill">
+              <strong>Code review</strong>
+              <p>Surface blind spots, missing tests, and confidence risks before Codex finalizes changes.</p>
+            </div>
+            <div class="pill">
+              <strong>Debugging hypotheses</strong>
+              <p>Collect independent failure explanations without letting advisors mutate the working tree.</p>
+            </div>
+            <div class="pill">
+              <strong>Test planning</strong>
+              <p>Turn uncertain behavior into falsifiable checks and explicit not-found statuses.</p>
+            </div>
+            <div class="pill">
+              <strong>Benchmark analysis</strong>
+              <p>Separate observed experience from proven claims across benchmark-style tasks.</p>
+            </div>
+            <div class="pill">
+              <strong>High-uncertainty work</strong>
+              <p>Spend extra model time where disagreement, evidence, and verification can repay it.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="band" id="usage">
+          <div class="section">
+            <div class="section-header">
+              <h2>Install and run</h2>
+              <p class="section-intro">
+                Panda is checkout-first. The Python package installs the artifact helpers, while the runners
+                are repo-level scripts.
+              </p>
+            </div>
+            <div class="usage-grid">
+              <div class="code-panel">
+                <div class="code-panel-header">
+                  <span>Install from the source checkout</span>
+                  <button class="copy-button" type="button" data-copy="install-command">Copy</button>
+                </div>
+                <pre id="install-command"><code>git clone https://github.com/igcodinap/panda.git
+cd panda
+python3 -m pip install -e .</code></pre>
+              </div>
+              <div class="code-panel">
+                <div class="code-panel-header">
+                  <span>Run a consultation</span>
+                  <button class="copy-button" type="button" data-copy="consult-command">Copy</button>
+                </div>
+                <pre id="consult-command"><code>python3 scripts/consult_ai_team.py \
+  --tool all \
+  --mode explore \
+  --role implementation-review \
+  --prompt "Review this plan. What risks, alternatives, and tests should Codex consider?"</code></pre>
+              </div>
+              <div class="code-panel">
+                <div class="code-panel-header">
+                  <span>Preview the runner commands</span>
+                  <button class="copy-button" type="button" data-copy="dry-run-command">Copy</button>
+                </div>
+                <pre id="dry-run-command"><code>python3 scripts/consult_ai_team.py \
+  --dry-run \
+  --tool all \
+  --prompt "smoke test"</code></pre>
+              </div>
+              <div class="code-panel">
+                <div class="code-panel-header">
+                  <span>Verify the checkout</span>
+                  <button class="copy-button" type="button" data-copy="test-command">Copy</button>
+                </div>
+                <pre id="test-command"><code>python3 -m pytest -q -p no:rerunfailures</code></pre>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="research">
+          <div class="section-header">
+            <h2>Academic sources</h2>
+            <p class="section-intro">
+              Panda uses the literature as constraint, not decoration: more agents are not automatically
+              better, budgets matter, coordination fails, and benchmarks need humility.
+            </p>
+          </div>
+          <div class="source-grid">
+            {sources.map((source) => (
+              <article class="source-card">
+                <h3>{source.title}</h3>
+                <dl>
+                  <div>
+                    <dt>Core claim</dt>
+                    <dd>{source.claim}</dd>
+                  </div>
+                  <div>
+                    <dt>Panda implication</dt>
+                    <dd>{source.implication}</dd>
+                  </div>
+                  <div>
+                    <dt>Caveat</dt>
+                    <dd>{source.caveat}</dd>
+                  </div>
+                </dl>
+                <a href={source.href}>Source</a>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section class="band" id="evaluation">
+          <div class="section">
+            <div class="section-header">
+              <h2>Evaluation status</h2>
+              <p class="section-intro">
+                Panda has useful early evidence as a review and confidence amplifier. Solve-rate lift remains
+                an active evaluation question.
+              </p>
+            </div>
+            <div class="status-grid">
+              <div class="status-panel">
+                <h3>Observed so far</h3>
+                <ul>
+                  <li>Independent advisors expose risks Codex can miss on first pass.</li>
+                  <li>V2 contracts turn fluent advice into auditable claims and tests.</li>
+                  <li>Curated summaries are public; raw benchmark artifacts are reviewed before publication.</li>
+                </ul>
+              </div>
+              <div class="status-panel">
+                <h3>What Panda does not claim yet</h3>
+                <p>
+                  Panda does not yet claim a statistically proven solve-rate lift over Codex alone. The public
+                  position is conservative: it is a contract-pressure system with promising experience and an
+                  evaluation path.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <div class="footer-inner">
+          <span>Apache-2.0. Built for Codex-centered engineering consultation.</span>
+          <div class="footer-links">
+            <a href={repoUrl}>GitHub</a>
+            <a href={`${repoUrl}/blob/main/README.md`}>README</a>
+            <a href={`${repoUrl}/blob/main/references/research-foundations.md`}>Research foundations</a>
+            <a href={`${repoUrl}/blob/main/SECURITY.md`}>Security</a>
+          </div>
+        </div>
+      </footer>
+    </div>
+
+    <script>
+      document.querySelectorAll("[data-copy]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const targetId = button.getAttribute("data-copy");
+          const target = targetId ? document.getElementById(targetId) : null;
+          if (!target) return;
+          const text = target.textContent || "";
+          try {
+            await navigator.clipboard.writeText(text.trim());
+            button.textContent = "Copied";
+            window.setTimeout(() => {
+              button.textContent = "Copy";
+            }, 1300);
+          } catch {
+            button.textContent = "Select";
+          }
+        });
+      });
+    </script>
+  </body>
+</html>
