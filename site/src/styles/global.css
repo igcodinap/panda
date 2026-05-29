@@ -372,21 +372,11 @@ select {
   color: var(--muted);
 }
 
-.loop,
-.pill-grid,
 .usage-grid,
 .source-grid,
 .status-grid {
   display: grid;
   gap: 14px;
-}
-
-.loop {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.pill-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .usage-grid,
@@ -399,8 +389,6 @@ select {
   grid-template-columns: 1fr;
 }
 
-.loop-step,
-.pill,
 .source-card,
 .codex-demo,
 .status-panel {
@@ -409,34 +397,186 @@ select {
   background: var(--panel);
 }
 
-.loop-step,
-.pill,
 .source-card,
 .status-panel {
   padding: 20px;
 }
 
-.loop-step span {
-  display: block;
-  margin-bottom: 14px;
-  color: var(--soft);
-  font-size: 0.86rem;
-}
-
-.loop-step strong,
-.pill strong {
-  display: block;
-  margin-bottom: 8px;
-  font-family: var(--font-display);
-  font-weight: 600;
-  line-height: 1.25;
-}
-
-.loop-step p,
-.pill p,
 .status-panel p {
   margin: 0;
   color: var(--muted);
+}
+
+.fit-focus {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.7fr);
+  align-items: stretch;
+  gap: 18px;
+}
+
+.leverage-figure {
+  min-width: 0;
+  margin: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 14px 38px rgba(17, 17, 17, 0.04);
+}
+
+.leverage-image {
+  display: block;
+  width: 100%;
+  min-width: 600px;
+  height: auto;
+}
+
+.leverage-image text {
+  fill: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 560;
+}
+
+.leverage-image .diagram-title,
+.leverage-image .block-title,
+.leverage-image .check-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+
+.leverage-image .diagram-title {
+  font-size: 27px;
+}
+
+.leverage-image .diagram-caption,
+.leverage-image .block-copy,
+.leverage-image .check-copy,
+.leverage-image .leverage-note {
+  fill: var(--muted);
+}
+
+.leverage-image .diagram-caption {
+  font-family: var(--font-body);
+  font-size: 17px;
+}
+
+.leverage-image .zone-label {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 720;
+  text-transform: uppercase;
+}
+
+.leverage-image .leverage-note {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 640;
+}
+
+.leverage-image .block-title {
+  font-size: 22px;
+}
+
+.leverage-image .block-copy,
+.leverage-image .check-copy {
+  font-family: var(--font-body);
+  font-size: 16px;
+}
+
+.leverage-image .check-title {
+  font-size: 19px;
+}
+
+.pressure-shell {
+  fill: #fbfbfa;
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.upstream-block {
+  fill: #c8efca;
+  stroke: #78a879;
+  stroke-width: 1.5;
+}
+
+.downstream-block {
+  fill: #fff;
+  stroke: #cfcfca;
+  stroke-width: 1.8;
+}
+
+.check-block {
+  fill: #fff3c8;
+  stroke: #c8b86f;
+  stroke-width: 1.5;
+}
+
+.leverage-arrow,
+.check-arrow,
+.return-arrow {
+  fill: none;
+  stroke: #777;
+  stroke-linecap: round;
+  stroke-width: 2;
+  marker-end: url("#arrowhead");
+}
+
+.check-arrow,
+.return-arrow {
+  stroke-dasharray: 7 8;
+}
+
+.leverage-image marker path {
+  fill: #777;
+}
+
+.fit-points {
+  display: grid;
+  gap: 12px;
+}
+
+.fit-point {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.fit-point span {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--soft);
+  font-size: 0.76rem;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.fit-point strong {
+  display: block;
+  margin-bottom: 8px;
+  font-family: var(--font-display);
+  font-size: 1.08rem;
+  font-weight: 650;
+  line-height: 1.22;
+}
+
+.fit-point p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.fit-point-primary {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+}
+
+.fit-point-primary span,
+.fit-point-primary p {
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .codex-demo {
@@ -1012,6 +1152,7 @@ code {
 
 @media (max-width: 980px) {
   .section-header,
+  .fit-focus,
   .status-grid,
   .usage-grid,
   .source-grid {
@@ -1022,10 +1163,6 @@ code {
     font-size: 2.82rem;
   }
 
-  .loop,
-  .pill-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 720px) {
@@ -1091,8 +1228,6 @@ code {
     font-size: 1rem;
   }
 
-  .loop,
-  .pill-grid,
   .thesis-strip {
     grid-template-columns: 1fr;
   }
