@@ -5,8 +5,7 @@ const repoUrl = "https://github.com/igcodinap/panda";
 const baseUrl = import.meta.env.BASE_URL.endsWith("/")
   ? import.meta.env.BASE_URL
   : `${import.meta.env.BASE_URL}/`;
-const logoUrl = `${baseUrl}panda-logo.png?v=20260529-style`;
-const systemCardUrl = `${baseUrl}panda-system-card.svg`;
+const logoUrl = `${baseUrl}panda-logo.png?v=20260529-simple`;
 const sources = [
   {
     title: "Gao et al., Single-agent or Multi-agent Systems? Why Not Both?",
@@ -115,77 +114,40 @@ const sources = [
 
       <main id="top">
         <section class="hero" aria-labelledby="hero-title">
-          <div class="hero-content">
-            <p class="eyebrow">
-              <span>Experience-based</span>
-              <span>scientifically grounded</span>
-              <span>Codex-centered</span>
-            </p>
-            <h1 id="hero-title">
-              panda is not a panda.
-              <span>it is a MAS system for leveraging Codex weak spots where it matters.</span>
-            </h1>
-            <p class="hero-copy">
-              Panda runs independent model consultations around a Codex task, extracts structured contracts,
-              preserves useful disagreement, and lets Codex integrate only what survives local evidence and tests.
-            </p>
-            <div class="hero-actions">
-              <a class="button" href="#usage">Install Panda</a>
-              <a class="ghost-button" href="#research">Read the sources</a>
-            </div>
-            <div class="hero-stat-row" aria-label="Panda principles">
-              <div class="hero-stat accent-lime">
-                <span>01</span>
-                <strong>Independent advisors</strong>
-                <p>inspect without editing</p>
-              </div>
-              <div class="hero-stat accent-cyan">
-                <span>02</span>
-                <strong>Structured contracts</strong>
-                <p>preserve useful pressure</p>
-              </div>
-              <div class="hero-stat accent-pink">
-                <span>03</span>
-                <strong>Tests decide</strong>
-                <p>what survives integration</p>
-              </div>
-            </div>
+          <div class="hero-logo" aria-hidden="true">
+            <img src={logoUrl} width="900" height="797" alt="" />
           </div>
-          <div class="hero-media">
-            <div class="mark-panel">
-              <div class="mark-panel-header">
-                <span>panda / v1.0</span>
-                <span>bounded MAS</span>
-              </div>
-              <div class="mark-lockup">
-                <img src={logoUrl} width="900" height="797" alt="Panda line drawing logo" />
-                <div>
-                  <strong>not mascot.</strong>
-                  <span>pressure system for the parts of a Codex task where one pass gets brittle.</span>
-                </div>
-              </div>
+          <p class="eyebrow">Local MAS consultation for Codex</p>
+          <h1 id="hero-title">
+            panda is not a panda.
+            <span>it is a MAS system for leveraging Codex weak spots where it matters.</span>
+          </h1>
+          <p class="hero-copy">
+            Panda runs independent model consultations around a Codex task, extracts structured contracts,
+            preserves useful disagreement, and lets Codex integrate only what survives local evidence and tests.
+          </p>
+          <div class="hero-command">
+            <pre id="quick-command"><code>git clone https://github.com/igcodinap/panda.git
+cd panda
+python3 -m pip install -e .</code></pre>
+            <button class="copy-button" type="button" data-copy="quick-command">Copy</button>
+          </div>
+          <div class="hero-actions">
+            <a class="button" href="#usage">Get started</a>
+            <a class="ghost-button" href={repoUrl}>GitHub</a>
+          </div>
+          <div class="hero-stat-row" aria-label="Panda principles">
+            <div class="hero-stat">
+              <strong>Independent advisors</strong>
+              <p>review without editing the working tree.</p>
             </div>
-            <div class="system-preview">
-              <img
-                src={systemCardUrl}
-                width="1280"
-                height="820"
-                alt="Panda advisor panes feeding contracts into Codex integration and test verification"
-              />
+            <div class="hero-stat">
+              <strong>Structured contracts</strong>
+              <p>turn advice into claims, risks, and checks.</p>
             </div>
-            <div class="signal-grid" aria-label="System properties">
-              <div>
-                <span>editor</span>
-                <strong>Codex</strong>
-              </div>
-              <div>
-                <span>advisor role</span>
-                <strong>pressure</strong>
-              </div>
-              <div>
-                <span>claim status</span>
-                <strong>tested</strong>
-              </div>
+            <div class="hero-stat">
+              <strong>Tests decide</strong>
+              <p>Codex integrates only what local evidence supports.</p>
             </div>
           </div>
         </section>
