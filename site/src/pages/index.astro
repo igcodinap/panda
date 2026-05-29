@@ -164,7 +164,7 @@ const sources = [
           <div class="codex-demo hero-codex-demo" aria-label="Codex using Panda skill automatically">
             <div class="codex-demo-header">
               <span>Codex</span>
-              <strong>native skill trigger</strong>
+              <strong>config-aware skill trigger</strong>
             </div>
             <div class="codex-thread">
               <div class="chat-bubble user-bubble">
@@ -173,12 +173,26 @@ const sources = [
               </div>
               <div class="chat-bubble codex-bubble">
                 <span>Codex</span>
-                <p>Using the Panda skill for independent review.</p>
+                <p>Using Panda. No saved profile means one extra reviewer: Codex <code>gpt-5.5</code> at medium reasoning.</p>
+              </div>
+              <div class="panda-config-preview" aria-label="Panda default and saved configuration">
+                <div>
+                  <span>default agent</span>
+                  <strong>codex:gpt-5.5@medium</strong>
+                </div>
+                <div>
+                  <span>saved profile</span>
+                  <strong>~/.config/panda/preferences.json</strong>
+                </div>
+                <div>
+                  <span>update through Codex</span>
+                  <strong>"set Panda to use Kimi + GLM"</strong>
+                </div>
               </div>
               <div class="skill-run" aria-hidden="true">
                 <span>skill matched: panda</span>
-                <span>running independent advisors</span>
-                <span>writing evidence artifacts</span>
+                <span>loading saved behavior profile</span>
+                <span>save-preferences smoke test when updated</span>
                 <span>Codex integrates. Tests decide.</span>
               </div>
             </div>
@@ -296,10 +310,11 @@ python3 -m pip install -e .</code></pre>
                 <span>Set up Codex access</span>
                 <ol>
                   <li>Open the Panda checkout in Codex or make its <code>SKILL.md</code> available as a Codex skill.</li>
-                  <li>Confirm <code>claude</code> and/or <code>opencode</code> are on PATH and authenticated.</li>
+                  <li>Confirm <code>codex</code> is on PATH, or set <code>CODEX_BIN</code>.</li>
+                  <li>Add Claude Code or OpenCode only when you want extra advisor sources.</li>
                   <li>Ask Codex: <strong>review this with Panda</strong>.</li>
                 </ol>
-                <p>Codex remains the editor. Panda supplies independent review pressure and evidence.</p>
+                <p>With no saved config, Panda starts with the Codex reviewer. Optional CLIs can be saved into the behavior profile later.</p>
               </div>
             </div>
             <div class="requirements-strip" aria-label="Panda requirements">
@@ -307,26 +322,26 @@ python3 -m pip install -e .</code></pre>
               <ul>
                 <li>Python 3.9+</li>
                 <li>
+                  <a href="https://developers.openai.com/codex/cli" target="_blank" rel="noreferrer">Codex CLI</a>
+                  installed or <code>CODEX_BIN</code> set
+                </li>
+                <li>Panda skill available to Codex</li>
+                <li>Codex CLI auth configured</li>
+                <li>
                   <a href="https://docs.anthropic.com/en/docs/claude-code/overview" target="_blank" rel="noreferrer">
                     Claude Code
                   </a>
-                  installed
+                  optional, for Claude-backed advisors
                 </li>
                 <li>
                   <a href="https://opencode.ai/" target="_blank" rel="noreferrer">OpenCode</a>
-                  installed
+                  optional, for Kimi, GLM, Qwen, or other OpenCode-backed advisors
                 </li>
-                <li>
-                  <a href="https://developers.openai.com/codex/cli" target="_blank" rel="noreferrer">Codex CLI</a>
-                  installed for portable fallback runs
-                </li>
-                <li>CLI auth configured</li>
-                <li>Panda skill available to Codex</li>
               </ul>
               <p>
-                At least one advisor CLI is required: Claude Code, OpenCode, or Codex. For full
-                multi-advisor runs, install all available cores. Panda can still run with whichever
-                advisor CLI is available.
+                The minimum working setup is Python plus Codex. Claude Code and OpenCode are
+                optional sources of extra review pressure; save them into Panda's behavior profile
+                when you want future runs to use them.
               </p>
             </div>
           </div>

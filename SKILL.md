@@ -41,10 +41,13 @@ python3 scripts/consult_ai_team.py \
 
 Prerequisites:
 
-- `codex` is available on `PATH`, or `CODEX_BIN` points to the Codex CLI, for the default portable Codex reviewer.
-- Optional: `claude` is available on `PATH`, or `CLAUDE_BIN` points to the Claude Code CLI, when using Claude Code agents.
-- Optional: `opencode` is available on `PATH`, or `OPENCODE_BIN` points to the OpenCode CLI, when using OpenCode agents.
-- The CLIs you plan to run are locally authenticated before Panda is invoked.
+- Minimum: `codex` is available on `PATH`, or `CODEX_BIN` points to the Codex CLI. With only Codex available, Panda runs the portable Codex reviewer on `gpt-5.5` with `medium` reasoning.
+- Optional advisor source: `claude` is available on `PATH`, or `CLAUDE_BIN` points to the Claude Code CLI, when the user wants Panda to spawn Claude Code agents.
+- Optional advisor source: `opencode` is available on `PATH`, or `OPENCODE_BIN` points to the OpenCode CLI, when the user wants Panda to spawn OpenCode-backed agents such as Kimi, GLM, or Qwen.
+- The CLIs Panda is asked to run are locally authenticated before invocation.
+- The Panda skill is available to Codex, or the Panda checkout is opened directly in Codex for repository-local use.
+
+Claude Code and OpenCode are not required for the base install. They add more independent review pressure when configured, but the default no-config path is intentionally Codex-only so a fresh checkout can still use Panda.
 
 The runner:
 
@@ -67,6 +70,8 @@ The runner:
 Use `--prompt-file` for longer prompts, `--workspace` to target a repo explicitly, `--approval-mode supervised` to disable collaborator auto-approval, `--execution parallel` or `--execution sequential` to override auto execution, `--profile fast|balanced|deep` to choose cost/depth, and `--dry-run` to inspect commands without calling the tools. Use `--session` to create a persistent Panda session, `--session <id>` to continue it, `--session-dir` to choose where session state lives, and `--straggler-timeout` to bound how long a session turn waits for lagging collaborators after another collaborator has finished. Use `--no-session-memory` or `PANDA_NO_SESSION_MEMORY=1` to skip previous-turn summary injection. Use `--serialize-opencode` or `PANDA_SERIALIZE_OPENCODE=1` only as a diagnostic fallback if GLM/Qwen appear to contend on OpenCode runtime state; OpenCode-backed tools still run in parallel by default. Environment overrides are also supported with `AI_TEAM_EXECUTION`, `AI_TEAM_APPROVAL_MODE`, `PANDA_NO_SESSION_MEMORY`, `PANDA_SERIALIZE_OPENCODE`, `OPENCODE_MODEL`, `CODEX_MODEL`, `CODEX_REASONING_EFFORT`, and `CODEX_EFFORT`; invalid values are rejected.
 
 When the user clearly asks to remember Panda defaults, use `--save-preferences` with explicit `--agent` flags. Preferences are user-scoped JSON at `PANDA_PREFERENCES_FILE`, `$XDG_CONFIG_HOME/panda/preferences.json`, or `~/.config/panda/preferences.json`; they are never inferred from normal runs or manifests. New saves write one behavior profile with named agents, for example `profile.agents: [{name, backend, model, effort?}]`; OpenCode is the backend, so Kimi, GLM, Qwen, or any other OpenCode model should be represented as separate named OpenCode agents. Every successful save automatically smoke-tests the saved profile by reloading it and building the Panda commands it would run; if the backend is unavailable or command construction fails, the save fails before writing. Legacy slot-style preference files are loaded for compatibility. Use `--show-preferences` to inspect, `--reset-preferences` to clear, and `--ignore-preferences` or `PANDA_NO_PREFERENCES=1` to bypass them for one invocation. A one-off single `--agent ...` run overrides saved preferences. Existing Panda sessions keep their stored agent/model state unless explicitly overridden.
+
+If a configured optional CLI is later removed or unauthenticated, Panda fails that saved profile clearly instead of silently dropping the advisor. Update the profile with `--save-preferences`, or bypass it once with `--ignore-preferences`.
 
 When Codex runs the runner with OpenCode or the Codex reviewer enabled, execute it outside the filesystem sandbox when the CLI needs to update its own state. OpenCode writes to `~/.local/share/opencode`; Codex can read and write state under `~/.codex`. Sandboxed runs can fail with SQLite or permission errors before the collaborator starts. Codex may still need one host-level approval to launch the runner outside the sandbox, but collaborator CLIs should not pause for their own internal approvals after launch.
 
@@ -117,6 +122,8 @@ python3 scripts/consult_ai_team.py \
   --agent glm=opencode:opencode-go/glm-5.1 \
   --save-preferences
 ```
+
+When the user asks in natural language, for example "set Panda to use Kimi and GLM from now on," Codex should translate that request into `--save-preferences`, write the user-scoped file at `~/.config/panda/preferences.json` unless overridden, and rely on Panda's automatic smoke test before treating the update as valid.
 
 Future plain Panda runs spawn the named Kimi and GLM OpenCode-backed agents. Without saved preferences, plain Panda starts with the Codex reviewer only. A one-off single `--agent ...` run overrides the saved profile for that invocation.
 

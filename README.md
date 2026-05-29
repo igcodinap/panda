@@ -26,10 +26,19 @@ where a single local inspection is enough.
 Prerequisites:
 
 - Python 3.9 or newer.
-- `codex` on `PATH`, or set `CODEX_BIN`, for the default portable Codex reviewer.
-- Optional: `claude` on `PATH`, or set `CLAUDE_BIN`, when using Claude Code agents.
-- Optional: `opencode` on `PATH`, or set `OPENCODE_BIN`, when using OpenCode agents.
-- Local authentication configured for the CLIs you plan to run.
+- Minimum: `codex` on `PATH`, or set `CODEX_BIN`. With only Codex available,
+  Panda runs the portable Codex reviewer on `gpt-5.5` with `medium` reasoning.
+- Optional advisor source: `claude` on `PATH`, or set `CLAUDE_BIN`, when you
+  want Panda to spawn Claude Code agents.
+- Optional advisor source: `opencode` on `PATH`, or set `OPENCODE_BIN`, when
+  you want Panda to spawn OpenCode-backed agents such as Kimi, GLM, or Qwen.
+- Local authentication configured for every CLI you ask Panda to run.
+- The Panda skill available to Codex, or the Panda checkout opened directly in
+  Codex for repository-local use.
+
+Claude Code and OpenCode are not required for the base install. They add more
+independent review pressure when configured, but the default no-config path is
+intentionally Codex-only so a fresh checkout can still use Panda.
 
 Codex-facing Panda use has two model-selection paths:
 
@@ -68,6 +77,12 @@ python3 scripts/consult_ai_team.py \
   --save-preferences
 ```
 
+When using the Codex skill, the user can ask for this in natural language, for
+example: "set Panda to use Kimi and GLM from now on." Codex should translate
+that request into `--save-preferences`, write the user-scoped file at
+`~/.config/panda/preferences.json` unless overridden, and rely on Panda's
+automatic smoke test before treating the update as valid.
+
 Plain Panda runs then spawn those configured agents. A one-off single `--agent`
 run overrides the saved profile for that invocation. Inspect or clear preferences
 with `--show-preferences` and `--reset-preferences`; bypass them for one
@@ -76,6 +91,10 @@ slot-style preference files are still loaded for compatibility, but new saved
 preferences are written as the single `profile.agents` behavior shape. Every
 successful save automatically smoke-tests the saved profile by reloading it and
 building the Panda commands it would run.
+
+If a configured optional CLI is later removed or unauthenticated, Panda fails
+that saved profile clearly instead of silently dropping the advisor. Update the
+profile with `--save-preferences`, or bypass it once with `--ignore-preferences`.
 
 For a no-cost command preview:
 

@@ -653,6 +653,51 @@ select {
   background: #fff;
 }
 
+.chat-bubble code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+
+.panda-config-preview {
+  display: grid;
+  margin-top: 2px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.panda-config-preview div {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.7fr) minmax(0, 1.3fr);
+  align-items: center;
+  min-height: 42px;
+  padding: 10px 14px;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.panda-config-preview div:last-child {
+  border-bottom: 0;
+}
+
+.panda-config-preview span {
+  color: var(--soft);
+  font-size: 0.74rem;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.panda-config-preview strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.79rem;
+  font-weight: 560;
+  line-height: 1.35;
+}
+
 .skill-run {
   display: grid;
   margin-top: 4px;
@@ -999,6 +1044,11 @@ code {
 
   .chat-bubble {
     width: 100%;
+  }
+
+  .panda-config-preview div {
+    grid-template-columns: 1fr;
+    gap: 3px;
   }
 
   .requirements-strip {
