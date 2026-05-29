@@ -55,6 +55,25 @@ python3 scripts/consult_ai_team.py \
 `--tool codex` runs only the Codex reviewer core. The Codex core defaults to
 `gpt-5.5` with `medium` reasoning.
 
+To remember a Panda default for future runs, save an explicit behavior profile.
+This stores the named agents Panda should spawn outside the repo; OpenCode is
+recorded as a backend, so Kimi, GLM, Qwen, or any other OpenCode model can be
+separate named agents:
+
+```bash
+python3 scripts/consult_ai_team.py \
+  --agent kimi=opencode:opencode-go/kimi-k2.6 \
+  --agent glm=opencode:opencode-go/glm-5.1 \
+  --save-preferences
+```
+
+Plain Panda runs then spawn those named agents. Explicit flags still win, so
+`--tool all` or `--agent ...` overrides the saved profile for one run. Inspect
+or clear preferences with `--show-preferences` and `--reset-preferences`; bypass
+them for one invocation with `--ignore-preferences` or `PANDA_NO_PREFERENCES=1`.
+Older slot-style preference files are still loaded for compatibility, but new
+saved preferences are written as the single `profile.agents` behavior shape.
+
 For a no-cost command preview:
 
 ```bash

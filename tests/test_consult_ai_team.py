@@ -45,10 +45,23 @@ class ExecutionModeTests(unittest.TestCase):
         self.assertEqual(list(parallel), ["claude"])
         self.assertEqual(list(serialized), ["opencode", "qwen"])
 
+    def test_custom_opencode_agents_can_be_serialized_by_backend(self) -> None:
+        parallel, serialized = consult_ai_team.split_serialized_opencode_commands(
+            {
+                "kimi": ["opencode"],
+                "glm": ["opencode"],
+                "codex": ["codex"],
+            },
+            {"kimi", "glm"},
+        )
+
+        self.assertEqual(list(parallel), ["codex"])
+        self.assertEqual(list(serialized), ["kimi", "glm"])
+
 
 class ArgumentValidationTests(unittest.TestCase):
     def parse_with(self, argv: list[str], env: Optional[dict[str, str]] = None):
-        env = env or {}
+        env = {"PANDA_NO_PREFERENCES": "1", **(env or {})}
         with patch.object(sys, "argv", ["consult_ai_team.py", *argv]):
             with patch.dict(os.environ, env, clear=True):
                 with redirect_stderr(io.StringIO()):
@@ -120,7 +133,7 @@ class ArgumentValidationTests(unittest.TestCase):
 
 class ProfileResolutionTests(unittest.TestCase):
     def parse_with(self, argv: list[str], env: Optional[dict[str, str]] = None):
-        env = env or {}
+        env = {"PANDA_NO_PREFERENCES": "1", **(env or {})}
         with patch.object(sys, "argv", ["consult_ai_team.py", *argv]):
             with patch.dict(os.environ, env, clear=True):
                 with redirect_stderr(io.StringIO()):
@@ -345,6 +358,537 @@ class JsonHelperTests(unittest.TestCase):
             self.assertEqual(list(path.parent.glob("*.tmp")), [])
 
 
+class PreferenceTests(unittest.TestCase):
+    def parse_with(self, argv: list[str], env: Optional[dict[str, str]] = None):
+        env = env or {}
+        with patch.object(sys, "argv", ["consult_ai_team.py", *argv]):
+            with patch.dict(os.environ, env, clear=True):
+                with redirect_stderr(io.StringIO()):
+                    return consult_ai_team.parse_args()
+
+    def write_preferences(self, path: Path, **fields) -> None:
+        data = {"schema_version": consult_ai_team.PREFERENCES_SCHEMA_VERSION, **fields}
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    def test_preference_path_resolution_honors_env_xdg_and_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            explicit = Path(tmpdir) / "prefs.json"
+            with patch.dict(os.environ, {"PANDA_PREFERENCES_FILE": str(explicit)}, clear=True):
+                self.assertEqual(consult_ai_team.default_preferences_path(), explicit)
+
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": tmpdir}, clear=True):
+                self.assertEqual(
+                    consult_ai_team.default_preferences_path(),
+                    Path(tmpdir) / "panda" / "preferences.json",
+                )
+
+            with patch.dict(os.environ, {}, clear=True):
+                fallback = consult_ai_team.default_preferences_path()
+                self.assertEqual(fallback.name, "preferences.json")
+                self.assertEqual(fallback.parent.name, "panda")
+
+    def test_missing_preference_file_preserves_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "missing.json"
+
+            args = self.parse_with(["--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+
+            self.assertEqual(args.tool, "all")
+            self.assertFalse(args.preferences_metadata["loaded"])
+            self.assertEqual(args.preferences_metadata["applied_fields"], [])
+
+    def test_saved_tool_preference_changes_default_requested_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            self.write_preferences(pref_path, tool="opencode")
+
+            with patch.object(consult_ai_team.shutil, "which", return_value="/usr/bin/opencode"):
+                args = self.parse_with(["--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+
+            self.assertEqual(args.tool, "opencode")
+            self.assertEqual(consult_ai_team.requested_tools(args.tool, args), ["opencode"])
+            self.assertEqual(args.preferences_metadata["applied_fields"], ["tool"])
+
+    def test_explicit_tool_overrides_saved_tool_preference(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            self.write_preferences(pref_path, tool="opencode")
+
+            args = self.parse_with(
+                ["--tool", "all", "--prompt", "test"],
+                {"PANDA_PREFERENCES_FILE": str(pref_path)},
+            )
+
+            self.assertEqual(args.tool, "all")
+            self.assertEqual(args.preferences_metadata["ignored_fields"], {"tool": "explicit_cli_flag"})
+
+    def test_saved_model_preference_is_applied_and_recorded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            self.write_preferences(pref_path, opencode_model="provider/kimi-2.6")
+
+            args = self.parse_with(["--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+
+            self.assertEqual(args.profile_resolution["effective_models"]["opencode"], "provider/kimi-2.6")
+            self.assertEqual(args.preferences_metadata["applied_fields"], ["opencode_model"])
+
+    def test_cli_model_overrides_saved_model_preference(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            self.write_preferences(pref_path, opencode_model="provider/kimi-2.6")
+
+            args = self.parse_with(
+                ["--opencode-model", "provider/glm", "--prompt", "test"],
+                {"PANDA_PREFERENCES_FILE": str(pref_path)},
+            )
+
+            self.assertEqual(args.profile_resolution["effective_models"]["opencode"], "provider/glm")
+            self.assertEqual(
+                args.preferences_metadata["ignored_fields"],
+                {"opencode_model": "explicit_cli_flag"},
+            )
+
+    def test_session_state_overrides_saved_preferences_on_continuation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            self.write_preferences(pref_path, tool="opencode", opencode_model="provider/kimi-2.6")
+            session = {
+                "tool": "claude",
+                "profile": "fast",
+                "requested_models": {
+                    "claude": "sonnet",
+                    "opencode": "provider/session",
+                    "qwen": consult_ai_team.DEFAULT_QWEN_MODEL,
+                    "codex": consult_ai_team.DEFAULT_CODEX_MODEL,
+                },
+                "requested_effort": {
+                    "claude": "medium",
+                    "codex": "medium",
+                },
+            }
+
+            with patch.object(consult_ai_team.shutil, "which", return_value="/usr/bin/opencode"):
+                args = self.parse_with(["--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+            consult_ai_team.inherit_session_args(args, session)
+
+            self.assertEqual(args.tool, "claude")
+            self.assertEqual(args.opencode_model, "provider/session")
+            self.assertEqual(args.preferences_metadata["ignored_fields"]["tool"], "session_state")
+            self.assertEqual(args.preferences_metadata["ignored_fields"]["opencode_model"], "session_state")
+
+    def test_saved_auto_preference_resolves_available_tools_per_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            self.write_preferences(pref_path, tool="auto")
+
+            def only_codex(binary: str):
+                return "/usr/bin/codex" if binary == "codex" else None
+
+            def all_tools(binary: str):
+                return f"/usr/bin/{binary}" if binary in {"claude", "opencode", "codex"} else None
+
+            with patch.object(consult_ai_team.shutil, "which", side_effect=only_codex):
+                args = self.parse_with(["--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+                self.assertEqual(consult_ai_team.requested_tools(args.tool, args), ["codex"])
+
+            with patch.object(consult_ai_team.shutil, "which", side_effect=all_tools):
+                args = self.parse_with(["--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+                self.assertEqual(
+                    consult_ai_team.requested_tools(args.tool, args),
+                    ["claude", "opencode", "qwen", "codex"],
+                )
+
+    def test_profile_agents_spawn_custom_opencode_models_without_claude(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            self.write_preferences(
+                pref_path,
+                profile={
+                    "agents": [
+                        {"name": "kimi", "backend": "opencode", "model": "opencode-go/kimi-k2.6"},
+                        {"name": "glm", "backend": "opencode", "model": "opencode-go/glm-5.1"},
+                    ]
+                },
+            )
+
+            with patch.object(consult_ai_team.shutil, "which", return_value="/usr/bin/opencode"):
+                args = self.parse_with(["--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+                commands, _ = consult_ai_team.build_commands(args, "prompt", Path("/tmp"))
+
+            self.assertEqual(consult_ai_team.requested_tools(args.tool, args), ["kimi", "glm"])
+            self.assertEqual(list(commands), ["kimi", "glm"])
+            self.assertIn("opencode-go/kimi-k2.6", commands["kimi"])
+            self.assertIn("opencode-go/glm-5.1", commands["glm"])
+            self.assertEqual(args.preferences_metadata["applied_fields"], ["profile.agents"])
+
+    def test_agent_flags_override_saved_profile_agents(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            self.write_preferences(
+                pref_path,
+                profile={
+                    "agents": [
+                        {"name": "kimi", "backend": "opencode", "model": "opencode-go/kimi-k2.6"},
+                    ]
+                },
+            )
+
+            args = self.parse_with([
+                "--agent",
+                "glm=opencode:opencode-go/glm-5.1",
+                "--prompt",
+                "test",
+            ], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+
+            self.assertEqual(consult_ai_team.requested_tools(args.tool, args), ["glm"])
+            self.assertEqual(
+                args.preferences_metadata["ignored_fields"],
+                {"profile.agents": "explicit_agent_selection"},
+            )
+
+    def test_opencode_agent_rejects_effort(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "OpenCode, which does not support an effort setting"):
+            self.parse_with([
+                "--agent",
+                "glm=opencode:opencode-go/glm-5.1@high",
+                "--prompt",
+                "test",
+            ])
+
+    def test_duplicate_agent_names_in_preferences_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            self.write_preferences(
+                pref_path,
+                profile={
+                    "agents": [
+                        {"name": "reviewer", "backend": "codex", "model": "gpt-5.5"},
+                        {"name": "reviewer", "backend": "opencode", "model": "opencode-go/glm-5.1"},
+                    ]
+                },
+            )
+
+            with self.assertRaisesRegex(SystemExit, "agent names must be unique"):
+                self.parse_with(["--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+
+    def test_legacy_profile_string_preference_still_loads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            self.write_preferences(pref_path, profile="fast")
+
+            args = self.parse_with(["--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+
+            self.assertEqual(args.profile, "fast")
+            self.assertEqual(args.profile_resolution["profile"], "fast")
+            self.assertEqual(args.preferences_metadata["applied_fields"], ["profile"])
+
+    def test_saved_concrete_tool_fails_when_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            self.write_preferences(pref_path, tool="codex")
+
+            with patch.object(consult_ai_team.shutil, "which", return_value=None):
+                with self.assertRaisesRegex(SystemExit, "Saved Panda preference requested tool='codex'"):
+                    self.parse_with(["--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+
+    def test_saved_profile_agent_fails_when_backend_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            self.write_preferences(
+                pref_path,
+                profile={
+                    "agents": [
+                        {"name": "claude", "backend": "claude", "model": "claude-opus-4-7"},
+                    ]
+                },
+            )
+
+            with patch.object(consult_ai_team.shutil, "which", return_value=None):
+                with self.assertRaisesRegex(SystemExit, "requested agent 'claude' using claude"):
+                    self.parse_with(["--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+
+    def test_ignore_preferences_flag_and_env_skip_loading(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            self.write_preferences(pref_path, tool="codex")
+
+            args = self.parse_with(
+                ["--ignore-preferences", "--prompt", "test"],
+                {"PANDA_PREFERENCES_FILE": str(pref_path)},
+            )
+            self.assertEqual(args.tool, "all")
+            self.assertFalse(args.preferences_metadata["enabled"])
+
+            args = self.parse_with(
+                ["--prompt", "test"],
+                {"PANDA_PREFERENCES_FILE": str(pref_path), "PANDA_NO_PREFERENCES": "1"},
+            )
+            self.assertEqual(args.tool, "all")
+            self.assertFalse(args.preferences_metadata["enabled"])
+
+    def test_malformed_preferences_fail_unless_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            pref_path.write_text("{", encoding="utf-8")
+
+            with self.assertRaisesRegex(SystemExit, "Malformed Panda preferences"):
+                self.parse_with(["--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+
+            args = self.parse_with(
+                ["--ignore-preferences", "--prompt", "test"],
+                {"PANDA_PREFERENCES_FILE": str(pref_path)},
+            )
+            self.assertEqual(args.tool, "all")
+
+    def test_invalid_preferences_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+
+            self.write_preferences(pref_path, schema_version=99)
+            with self.assertRaisesRegex(SystemExit, "Unsupported Panda preferences schema"):
+                self.parse_with(["--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+
+            self.write_preferences(pref_path, tool="both")
+            with self.assertRaisesRegex(SystemExit, "Preference tool must be one of"):
+                self.parse_with(["--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+
+            self.write_preferences(pref_path, opencode_model="provider/model;rm")
+            with self.assertRaisesRegex(SystemExit, "contains unsupported characters"):
+                self.parse_with(["--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+
+    def test_save_show_and_reset_preferences(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "nested" / "prefs.json"
+            env = {"PANDA_PREFERENCES_FILE": str(pref_path)}
+
+            with patch.object(sys, "argv", [
+                "consult_ai_team.py",
+                "--tool",
+                "opencode",
+                "--opencode-model",
+                "provider/kimi-2.6",
+                "--save-preferences",
+            ]):
+                with patch.dict(os.environ, env, clear=True):
+                    with redirect_stdout(io.StringIO()):
+                        self.assertEqual(consult_ai_team.main(), 0)
+
+            saved = json.loads(pref_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                saved["profile"]["agents"],
+                [
+                    {
+                        "name": "kimi",
+                        "backend": "opencode",
+                        "model": "provider/kimi-2.6",
+                    }
+                ],
+            )
+            self.assertEqual(pref_path.stat().st_mode & 0o777, 0o600)
+
+            with patch.object(sys, "argv", ["consult_ai_team.py", "--show-preferences"]):
+                with patch.dict(os.environ, env, clear=True):
+                    stdout = io.StringIO()
+                    with redirect_stdout(stdout):
+                        self.assertEqual(consult_ai_team.main(), 0)
+            self.assertIn("provider/kimi-2.6", stdout.getvalue())
+
+            with patch.object(sys, "argv", ["consult_ai_team.py", "--reset-preferences"]):
+                with patch.dict(os.environ, env, clear=True):
+                    with redirect_stdout(io.StringIO()):
+                        self.assertEqual(consult_ai_team.main(), 0)
+            self.assertFalse(pref_path.exists())
+
+    def test_save_preferences_requires_explicit_preference_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            env = {"PANDA_PREFERENCES_FILE": str(pref_path)}
+
+            with patch.object(sys, "argv", [
+                "consult_ai_team.py",
+                "--save-preferences",
+            ]):
+                with patch.dict(os.environ, env, clear=True):
+                    with self.assertRaisesRegex(SystemExit, "--save-preferences requires"):
+                        consult_ai_team.main()
+
+            self.assertFalse(pref_path.exists())
+
+    def test_saved_behavior_profile_round_trips_into_configured_agents(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            env = {"PANDA_PREFERENCES_FILE": str(pref_path)}
+
+            with patch.object(sys, "argv", [
+                "consult_ai_team.py",
+                "--agent",
+                "kimi=opencode:opencode-go/kimi-k2.6",
+                "--agent",
+                "claude=claude:claude-opus-4-7@medium",
+                "--save-preferences",
+            ]):
+                with patch.dict(os.environ, env, clear=True):
+                    with redirect_stdout(io.StringIO()):
+                        self.assertEqual(consult_ai_team.main(), 0)
+
+            with patch.object(consult_ai_team.shutil, "which", return_value="/usr/bin/tool"):
+                args = self.parse_with(["--prompt", "test"], env)
+
+            self.assertEqual(
+                args.configured_agents,
+                [
+                    {"name": "kimi", "backend": "opencode", "model": "opencode-go/kimi-k2.6"},
+                    {
+                        "name": "claude",
+                        "backend": "claude",
+                        "model": "claude-opus-4-7",
+                        "effort": "medium",
+                    },
+                ],
+            )
+            self.assertEqual(consult_ai_team.requested_tools(args.tool, args), ["kimi", "claude"])
+
+    def test_save_model_flags_writes_single_behavior_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            env = {"PANDA_PREFERENCES_FILE": str(pref_path)}
+
+            with patch.object(sys, "argv", [
+                "consult_ai_team.py",
+                "--profile",
+                "fast",
+                "--opencode-model",
+                "provider/kimi-2.6",
+                "--qwen-model",
+                "provider/glm-5.1",
+                "--save-preferences",
+            ]):
+                with patch.dict(os.environ, env, clear=True):
+                    with redirect_stdout(io.StringIO()):
+                        self.assertEqual(consult_ai_team.main(), 0)
+
+            saved = json.loads(pref_path.read_text(encoding="utf-8"))
+            self.assertNotIn("opencode_model", saved)
+            self.assertNotIn("qwen_model", saved)
+            self.assertEqual(
+                saved["profile"]["agents"],
+                [
+                    {
+                        "name": "claude",
+                        "backend": "claude",
+                        "model": "sonnet",
+                        "effort": "medium",
+                    },
+                    {
+                        "name": "kimi",
+                        "backend": "opencode",
+                        "model": "provider/kimi-2.6",
+                    },
+                    {
+                        "name": "glm",
+                        "backend": "opencode",
+                        "model": "provider/glm-5.1",
+                    },
+                ],
+            )
+
+    def test_save_auto_writes_discovered_behavior_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            env = {"PANDA_PREFERENCES_FILE": str(pref_path)}
+
+            def only_codex(binary: str):
+                return "/usr/bin/codex" if binary == "codex" else None
+
+            with patch.object(sys, "argv", [
+                "consult_ai_team.py",
+                "--tool",
+                "auto",
+                "--save-preferences",
+            ]):
+                with patch.dict(os.environ, env, clear=True):
+                    with patch.object(consult_ai_team.shutil, "which", side_effect=only_codex):
+                        with redirect_stdout(io.StringIO()):
+                            self.assertEqual(consult_ai_team.main(), 0)
+
+            saved = json.loads(pref_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                saved["profile"]["agents"],
+                [
+                    {
+                        "name": "codex",
+                        "backend": "codex",
+                        "model": consult_ai_team.DEFAULT_CODEX_MODEL,
+                        "effort": consult_ai_team.DEFAULT_CODEX_EFFORT,
+                    }
+                ],
+            )
+
+    def test_save_agent_effort_writes_intensity_into_behavior_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            env = {"PANDA_PREFERENCES_FILE": str(pref_path)}
+
+            with patch.object(sys, "argv", [
+                "consult_ai_team.py",
+                "--agent",
+                "codex=codex:gpt-5.5",
+                "--codex-effort",
+                "high",
+                "--save-preferences",
+            ]):
+                with patch.dict(os.environ, env, clear=True):
+                    with redirect_stdout(io.StringIO()):
+                        self.assertEqual(consult_ai_team.main(), 0)
+
+            saved = json.loads(pref_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                saved["profile"]["agents"],
+                [
+                    {
+                        "name": "codex",
+                        "backend": "codex",
+                        "model": "gpt-5.5",
+                        "effort": "high",
+                    }
+                ],
+            )
+
+    def test_one_shot_manifest_records_preference_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            output_dir = Path(tmpdir) / "out"
+            self.write_preferences(pref_path, tool="opencode", opencode_model="provider/kimi-2.6")
+
+            with patch.object(consult_ai_team.shutil, "which", return_value="/usr/bin/opencode"):
+                args = self.parse_with([
+                    "--dry-run",
+                    "--output-dir",
+                    str(output_dir),
+                    "--prompt",
+                    "test",
+                ], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+                with redirect_stdout(io.StringIO()):
+                    consult_ai_team.run_one_shot(args, "prompt")
+
+            manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["requested_tools"], ["opencode"])
+            self.assertEqual(manifest["active_models"], {"opencode": "provider/kimi-2.6"})
+            self.assertEqual(manifest["preferences"]["applied_fields"], ["tool", "opencode_model"])
+
+    def test_new_session_state_records_preference_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            self.write_preferences(pref_path, tool="opencode")
+
+            with patch.object(consult_ai_team.shutil, "which", return_value="/usr/bin/opencode"):
+                args = self.parse_with(["--session", "--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
+            session = consult_ai_team.new_session_state(args, Path(tmpdir), "session-id")
+
+            self.assertEqual(session["requested_tools"], ["opencode"])
+            self.assertEqual(session["preferences"]["applied_fields"], ["tool"])
+
+
 class PromptCompatibilityTests(unittest.TestCase):
     def test_default_consultation_prompt_uses_v2_contract_protocol(self) -> None:
         prompt = consult_ai_team.consultation_prompt(
@@ -364,7 +908,7 @@ class PromptCompatibilityTests(unittest.TestCase):
 class ManifestTests(unittest.TestCase):
     def parse_with(self, argv: list[str]):
         with patch.object(sys, "argv", ["consult_ai_team.py", *argv]):
-            with patch.dict(os.environ, {}, clear=True):
+            with patch.dict(os.environ, {"PANDA_NO_PREFERENCES": "1"}, clear=True):
                 with redirect_stderr(io.StringIO()):
                     return consult_ai_team.parse_args()
 
@@ -601,7 +1145,7 @@ class ManifestTests(unittest.TestCase):
 class ArtifactTests(unittest.TestCase):
     def parse_with(self, argv: list[str]):
         with patch.object(sys, "argv", ["consult_ai_team.py", *argv]):
-            with patch.dict(os.environ, {}, clear=True):
+            with patch.dict(os.environ, {"PANDA_NO_PREFERENCES": "1"}, clear=True):
                 with redirect_stderr(io.StringIO()):
                     return consult_ai_team.parse_args()
 
@@ -851,7 +1395,7 @@ class SessionTests(unittest.TestCase):
 
     def parse_with(self, argv: list[str]):
         with patch.object(sys, "argv", ["consult_ai_team.py", *argv]):
-            with patch.dict(os.environ, {}, clear=True):
+            with patch.dict(os.environ, {"PANDA_NO_PREFERENCES": "1"}, clear=True):
                 with redirect_stderr(io.StringIO()):
                     return consult_ai_team.parse_args()
 
@@ -1126,6 +1670,48 @@ class SessionTests(unittest.TestCase):
             self.assertEqual([tool["tool"] for tool in turn_2["tools"]], ["qwen"])
             self.assertEqual(turn_2["requested_tools"], ["qwen"])
             self.assertEqual(turn_2["active_models"], {"qwen": consult_ai_team.DEFAULT_QWEN_MODEL})
+
+    def test_session_continuation_inherits_configured_agents(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = self.parse_with([
+                "--session",
+                "--session-dir",
+                tmpdir,
+                "--agent",
+                "kimi=opencode:opencode-go/kimi-k2.6",
+                "--agent",
+                "glm=opencode:opencode-go/glm-5.1",
+                "--dry-run",
+                "--prompt",
+                "first",
+            ])
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_session(args, "first")
+
+            session_dir = next(Path(tmpdir).iterdir())
+            session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+            args = self.parse_with([
+                "--session",
+                session["session_id"],
+                "--session-dir",
+                tmpdir,
+                "--dry-run",
+                "--prompt",
+                "second",
+            ])
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_session(args, "second")
+
+            turn_2 = json.loads((session_dir / "turns" / "002" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual([tool["tool"] for tool in turn_2["tools"]], ["kimi", "glm"])
+            self.assertEqual(turn_2["requested_tools"], ["kimi", "glm"])
+            self.assertEqual(
+                turn_2["active_models"],
+                {
+                    "kimi": "opencode-go/kimi-k2.6",
+                    "glm": "opencode-go/glm-5.1",
+                },
+            )
 
     def test_running_session_with_live_pid_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

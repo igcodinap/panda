@@ -50,7 +50,7 @@ Prerequisites:
 The runner:
 
 - Calls `claude -p`, `opencode run`, and/or `codex exec` when available.
-- Defaults to `--tool all`, which runs the legacy Claude Code, OpenCode GLM 5.1, and OpenCode Qwen 3.6 Plus trio. Use `--tool claude`, `--tool opencode`, `--tool qwen`, or `--tool codex` for one core. Use `--tool auto` to run available cores, including a Codex-only fallback when Codex is installed and no other collaborator CLI is available.
+- Defaults to `--tool all`, which runs the legacy Claude Code, OpenCode GLM 5.1, and OpenCode Qwen 3.6 Plus trio. Use `--tool claude`, `--tool opencode`, `--tool qwen`, or `--tool codex` for one core. Use `--tool auto` to run available cores, including a Codex-only fallback when Codex is installed and no other collaborator CLI is available. Use repeated `--agent name=backend:model` flags for a custom named behavior profile, such as `--agent kimi=opencode:opencode-go/kimi-k2.6 --agent glm=opencode:opencode-go/glm-5.1`.
 - Defaults to one-shot consultations. Use session mode only when the user asks for a conversation, persistent session, or to continue a Panda thread.
 - Defaults to `--approval-mode unsupervised`, so Claude Code and OpenCode auto-approve their own local tool prompts instead of blocking Codex.
 - Defaults to `--execution auto`, which runs multiple collaborators in parallel for `advisory` and `explore` mode.
@@ -63,6 +63,8 @@ The runner:
 - Writes compact JSON artifacts next to the raw outputs: `evidence.json`, `{tool}.summary.json`, `panda_contracts.v2.json`, and, for sessions, `turn_summary.json`. Contract-falsifier runs write `panda_falsifier.v2.json` instead of `panda_contracts.v2.json`. Read these first; inspect raw `{tool}.txt` logs only when details are needed.
 
 Use `--prompt-file` for longer prompts, `--workspace` to target a repo explicitly, `--approval-mode supervised` to disable collaborator auto-approval, `--execution parallel` or `--execution sequential` to override auto execution, `--profile fast|balanced|deep` to choose cost/depth, and `--dry-run` to inspect commands without calling the tools. Use `--session` to create a persistent Panda session, `--session <id>` to continue it, `--session-dir` to choose where session state lives, and `--straggler-timeout` to bound how long a session turn waits for lagging collaborators after another collaborator has finished. Use `--no-session-memory` or `PANDA_NO_SESSION_MEMORY=1` to skip previous-turn summary injection. Use `--serialize-opencode` or `PANDA_SERIALIZE_OPENCODE=1` only as a diagnostic fallback if GLM/Qwen appear to contend on OpenCode runtime state; OpenCode-backed tools still run in parallel by default. Environment overrides are also supported with `AI_TEAM_EXECUTION`, `AI_TEAM_APPROVAL_MODE`, `PANDA_NO_SESSION_MEMORY`, `PANDA_SERIALIZE_OPENCODE`, `OPENCODE_MODEL`, `CODEX_MODEL`, `CODEX_REASONING_EFFORT`, and `CODEX_EFFORT`; invalid values are rejected.
+
+When the user clearly asks to remember Panda defaults, use `--save-preferences` with explicit `--agent` flags or tool/profile/model/effort flags. Preferences are user-scoped JSON at `PANDA_PREFERENCES_FILE`, `$XDG_CONFIG_HOME/panda/preferences.json`, or `~/.config/panda/preferences.json`; they are never inferred from normal runs or manifests. New saves write one behavior profile with named agents, for example `profile.agents: [{name, backend, model, effort?}]`; OpenCode is the backend, so Kimi, GLM, Qwen, or any other OpenCode model should be represented as separate named OpenCode agents. Legacy slot-style preference files are loaded for compatibility. Use `--show-preferences` to inspect, `--reset-preferences` to clear, and `--ignore-preferences` or `PANDA_NO_PREFERENCES=1` to bypass them for one invocation. Explicit per-run flags such as `--tool all` or `--agent ...` override saved preferences. Existing Panda sessions keep their stored agent/model state unless explicitly overridden.
 
 When Codex runs the runner with OpenCode or the Codex reviewer enabled, execute it outside the filesystem sandbox when the CLI needs to update its own state. OpenCode writes to `~/.local/share/opencode`; Codex can read and write state under `~/.codex`. Sandboxed runs can fail with SQLite or permission errors before the collaborator starts. Codex may still need one host-level approval to launch the runner outside the sandbox, but collaborator CLIs should not pause for their own internal approvals after launch.
 
@@ -110,6 +112,17 @@ python3 scripts/consult_ai_team.py \
 ```
 
 Resolution precedence is: explicit `--claude-model`, `--claude-effort`, `--opencode-model`, `--qwen-model`, `--codex-model`, and `--codex-effort`; explicit `--profile`; environment defaults such as `OPENCODE_MODEL`, `CODEX_MODEL`, and `CODEX_REASONING_EFFORT`; role default profile; then the hard fallback. Claude effort is applied only when the installed Claude Code CLI exposes `--effort`; otherwise the runner omits that flag and records the requested/effective effort in the manifest without failing. OpenCode GLM 5.1 and Qwen 3.6 Plus receive only `--model`; the runner does not pass OpenCode `--variant` for them. Codex receives `--model` plus a `model_reasoning_effort` config override and defaults to `gpt-5.5` with `medium` reasoning.
+
+Saved preferences sit below explicit flags and existing session state, but above environment/profile/role defaults. For example, to remember a Claude-free Kimi plus GLM behavior profile, run:
+
+```bash
+python3 scripts/consult_ai_team.py \
+  --agent kimi=opencode:opencode-go/kimi-k2.6 \
+  --agent glm=opencode:opencode-go/glm-5.1 \
+  --save-preferences
+```
+
+Future plain Panda runs spawn the named Kimi and GLM OpenCode-backed agents. A one-off `--tool all` still runs the legacy Claude Code, GLM, and Qwen trio for that invocation.
 
 ## Session Mode
 
@@ -194,7 +207,7 @@ For deeper prompt patterns, read `references/prompt-patterns.md`. For the Panda 
 - OpenCode Qwen: profiles use `opencode-go/qwen3.6-plus`. Pass `--qwen-model` to override it. Qwen 3.6 Plus should receive only `--model`, not `--variant`.
 - Codex reviewer: profiles use `gpt-5.5` with `medium` reasoning. Pass `--codex-model` or `--codex-effort` to override them. The runner launches Codex with read-only sandboxing, `--ephemeral`, and `--ask-for-approval never`.
 - OpenCode usage: use `opencode stats --models`, `opencode run --format json`, or `opencode export <sessionID>` when token/cost/model details need inspection.
-- Runner manifests record `profile`, `profile_source`, `cost_tier`, profile-wide `effective_models`, launch-scoped `active_models`, `requested_tools`, `effective_effort`, `effort_support`, `applied_effort`, telemetry, artifact paths, and best-effort requested model/effort fields.
+- Runner manifests record `profile`, `profile_source`, `cost_tier`, profile-wide `effective_models`, launch-scoped `active_models`, `requested_tools`, `effective_effort`, `effort_support`, `applied_effort`, preference metadata, telemetry, artifact paths, and best-effort requested model/effort fields.
 - Treat usage metadata as best-effort unless the runner explicitly captures it for that run. When exact accounting matters, verify against the tool's native stats/export output.
 
 ## Evaluation

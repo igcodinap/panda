@@ -58,6 +58,20 @@ LEGACY_ALL_TOOLS = ("claude", "opencode", "qwen")
 AUTO_TOOL_ORDER = ("claude", "opencode", "qwen", "codex")
 TOOL_CHOICES = ("claude", "opencode", "qwen", "codex", "all", "auto")
 PROTOCOL_CHOICES = ("v2",)
+PREFERENCES_SCHEMA_VERSION = 1
+PREFERENCE_FIELDS = (
+    "tool",
+    "profile",
+    "claude_model",
+    "claude_effort",
+    "opencode_model",
+    "qwen_model",
+    "codex_model",
+    "codex_effort",
+)
+PREFERENCE_META_FIELDS = ("schema_version", "created_at", "updated_at")
+PREFERENCE_MODEL_FIELDS = ("claude_model", "opencode_model", "qwen_model", "codex_model")
+PREFERENCE_MAX_MODEL_CHARS = 256
 PATCH_MODE = "patch"
 PATCH_MODE_DISABLED_MESSAGE = (
     "Patch mode is disabled; use --mode advisory or --mode explore. Codex is the only editor."
@@ -102,6 +116,12 @@ MODEL_PROFILES = {
         "cost_tier": "high",
     },
 }
+PREFERENCE_FIELD_CHOICES = {
+    "tool": TOOL_CHOICES,
+    "profile": tuple(sorted(MODEL_PROFILES)),
+    "claude_effort": CLAUDE_EFFORT_CHOICES,
+    "codex_effort": CODEX_EFFORT_CHOICES,
+}
 ROLE_DEFAULT_PROFILES = {
     "brainstorm": "balanced",
     "research": "deep",
@@ -131,7 +151,10 @@ EXPLICIT_ARG_FLAGS = {
     "--qwen-model": "qwen_model",
     "--codex-model": "codex_model",
     "--codex-effort": "codex_effort",
+    "--agent": "agents",
 }
+AGENT_BACKEND_CHOICES = ("claude", "opencode", "codex")
+AGENT_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
 
 MODE_GUIDANCE = {
     "advisory": """Rules:
@@ -229,6 +252,16 @@ def parse_args() -> argparse.Namespace:
         help=f"Codex reviewer reasoning effort. Defaults through profile/env to {DEFAULT_CODEX_EFFORT}.",
     )
     parser.add_argument(
+        "--agent",
+        action="append",
+        default=[],
+        metavar="NAME=BACKEND:MODEL[@EFFORT]",
+        help=(
+            "Configure one Panda agent. BACKEND is claude, opencode, or codex. "
+            "Repeat to run several agents, e.g. --agent kimi=opencode:opencode-go/kimi-k2.6."
+        ),
+    )
+    parser.add_argument(
         "--no-session-memory",
         action="store_true",
         help="Session mode: do not inject the previous turn's compact summary into the next prompt.",
@@ -238,8 +271,36 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Run OpenCode-backed tools one at a time as a diagnostic fallback.",
     )
+    parser.add_argument(
+        "--save-preferences",
+        action="store_true",
+        help="Save explicitly provided Panda tool/profile/model/effort flags as user defaults, then exit.",
+    )
+    parser.add_argument(
+        "--show-preferences",
+        action="store_true",
+        help="Print the current Panda preferences file path and contents, then exit.",
+    )
+    parser.add_argument(
+        "--reset-preferences",
+        action="store_true",
+        help="Remove the current Panda preferences file, then exit.",
+    )
+    parser.add_argument(
+        "--ignore-preferences",
+        action="store_true",
+        help="Do not load saved Panda preferences for this invocation.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print commands without running tools.")
     args = parser.parse_args()
+    preference_command_count = sum(
+        int(flag)
+        for flag in (args.save_preferences, args.show_preferences, args.reset_preferences)
+    )
+    if preference_command_count > 1:
+        parser.error("Use only one of --save-preferences, --show-preferences, or --reset-preferences.")
+    if args.agent and "tool" in explicit_flags:
+        parser.error("Use either --agent or --tool, not both.")
     validate_choice(parser, "AI_TEAM_EXECUTION/--execution", args.execution, EXECUTION_CHOICES)
     validate_choice(parser, "AI_TEAM_APPROVAL_MODE/--approval-mode", args.approval_mode, APPROVAL_MODE_CHOICES)
     env_codex_effort = os.environ.get("CODEX_REASONING_EFFORT") or os.environ.get("CODEX_EFFORT")
@@ -253,6 +314,11 @@ def parse_args() -> argparse.Namespace:
     if args.timeout < 1:
         parser.error("--timeout must be at least 1 second.")
     args.explicit_flags = explicit_flags
+    args.preference_sourced_fields = set()
+    args.preferences_metadata = base_preferences_metadata(args)
+    args.configured_agents = parse_agent_specs(args.agent)
+    if not preference_management_requested(args):
+        apply_preferences(args)
     args.profile_resolution = resolve_profile(args)
     return args
 
@@ -273,10 +339,474 @@ def validate_choice(parser: argparse.ArgumentParser, label: str, value: str, cho
     parser.error(f"{label} must be one of: {', '.join(choices)}")
 
 
+def default_preferences_path() -> Path:
+    explicit_path = os.environ.get("PANDA_PREFERENCES_FILE")
+    if explicit_path:
+        return Path(explicit_path).expanduser()
+    xdg_home = os.environ.get("XDG_CONFIG_HOME")
+    if xdg_home:
+        return Path(xdg_home).expanduser() / "panda" / "preferences.json"
+    return Path.home() / ".config" / "panda" / "preferences.json"
+
+
+def preference_management_requested(args: argparse.Namespace) -> bool:
+    return bool(args.save_preferences or args.show_preferences or args.reset_preferences)
+
+
+def preferences_disabled(args: argparse.Namespace) -> tuple[bool, Optional[str]]:
+    if getattr(args, "ignore_preferences", False):
+        return True, "ignore_preferences"
+    if env_flag_enabled("PANDA_NO_PREFERENCES"):
+        return True, "PANDA_NO_PREFERENCES"
+    return False, None
+
+
+def base_preferences_metadata(args: argparse.Namespace) -> dict:
+    disabled, reason = preferences_disabled(args)
+    metadata = {
+        "enabled": not disabled,
+        "path": str(default_preferences_path()),
+        "schema_version": None,
+        "loaded": False,
+        "applied_fields": [],
+        "ignored_fields": {},
+        "warnings": [],
+    }
+    if reason:
+        metadata["warnings"].append(reason)
+    return metadata
+
+
+def add_preference_warning(args: argparse.Namespace, warning: str) -> None:
+    getattr(args, "preferences_metadata", {}).setdefault("warnings", []).append(warning)
+
+
+def mark_preference_ignored(args: argparse.Namespace, field: str, reason: str) -> None:
+    metadata = getattr(args, "preferences_metadata", None)
+    if not metadata:
+        return
+    metadata.setdefault("ignored_fields", {})[field] = reason
+    sourced = getattr(args, "preference_sourced_fields", set())
+    if isinstance(sourced, set):
+        sourced.discard(field)
+
+
+def validate_model_preference(field: str, value: object) -> str:
+    if not isinstance(value, str):
+        raise SystemExit(f"Preference {field} must be a string.")
+    if not value.strip():
+        raise SystemExit(f"Preference {field} must not be empty.")
+    if len(value) > PREFERENCE_MAX_MODEL_CHARS:
+        raise SystemExit(
+            f"Preference {field} must be {PREFERENCE_MAX_MODEL_CHARS} characters or fewer."
+        )
+    if value.startswith("-"):
+        raise SystemExit(f"Preference {field} must not start with '-'.")
+    if any(ch.isspace() or ch in ";|&$`" for ch in value):
+        raise SystemExit(f"Preference {field} contains unsupported characters.")
+    return value
+
+
+def validate_agent_name(name: object) -> str:
+    if not isinstance(name, str) or not AGENT_NAME_PATTERN.match(name):
+        raise SystemExit(
+            "Agent names must start with a letter and contain only letters, numbers, dots, dashes, or underscores."
+        )
+    return name
+
+
+def validate_agent_spec(agent: object, index: int = 0) -> dict:
+    if not isinstance(agent, dict):
+        raise SystemExit(f"Preference profile agent #{index + 1} must be a JSON object.")
+    name = validate_agent_name(agent.get("name"))
+    backend = agent.get("backend")
+    if backend not in AGENT_BACKEND_CHOICES:
+        raise SystemExit(f"Agent {name!r} backend must be one of: {', '.join(AGENT_BACKEND_CHOICES)}")
+    model = validate_model_preference(f"agent {name} model", agent.get("model"))
+    normalized = {
+        "name": name,
+        "backend": backend,
+        "model": model,
+    }
+    effort = agent.get("effort")
+    if effort is not None:
+        if not isinstance(effort, str):
+            raise SystemExit(f"Agent {name!r} effort must be a string.")
+        choices = CLAUDE_EFFORT_CHOICES if backend == "claude" else CODEX_EFFORT_CHOICES
+        if backend == "opencode":
+            raise SystemExit(f"Agent {name!r} uses OpenCode, which does not support an effort setting.")
+        if effort not in choices:
+            raise SystemExit(f"Agent {name!r} effort must be one of: {', '.join(choices)}")
+        normalized["effort"] = effort
+    return normalized
+
+
+def parse_agent_spec(raw: str) -> dict:
+    if "=" not in raw or ":" not in raw:
+        raise SystemExit("Agent specs must use NAME=BACKEND:MODEL[@EFFORT].")
+    name, backend_and_model = raw.split("=", 1)
+    backend, model_and_effort = backend_and_model.split(":", 1)
+    effort = None
+    model = model_and_effort
+    if "@" in model_and_effort:
+        model, effort = model_and_effort.rsplit("@", 1)
+    agent = {
+        "name": name,
+        "backend": backend,
+        "model": model,
+    }
+    if effort:
+        agent["effort"] = effort
+    return validate_agent_spec(agent)
+
+
+def parse_agent_specs(raw_specs: list[str]) -> list[dict]:
+    agents = [parse_agent_spec(raw_spec) for raw_spec in raw_specs]
+    names = [agent["name"] for agent in agents]
+    if len(names) != len(set(names)):
+        raise SystemExit("Agent names must be unique.")
+    return agents
+
+
+def profile_agents_from_preferences(preferences: dict) -> list[dict]:
+    profile = preferences.get("profile")
+    if not isinstance(profile, dict):
+        return []
+    agents = profile.get("agents")
+    if agents is None:
+        return []
+    if not isinstance(agents, list) or not agents:
+        raise SystemExit("Preference profile.agents must be a non-empty list.")
+    normalized_agents = [
+        validate_agent_spec(agent, index)
+        for index, agent in enumerate(agents)
+    ]
+    names = [agent["name"] for agent in normalized_agents]
+    if len(names) != len(set(names)):
+        raise SystemExit("Preference profile agent names must be unique.")
+    return normalized_agents
+
+
+def agent_name_from_backend_model(backend: str, model: str, fallback: str) -> str:
+    if backend != "opencode":
+        return fallback
+    normalized = model.lower()
+    if "kimi" in normalized:
+        return "kimi"
+    if "glm" in normalized:
+        return "glm"
+    if "qwen" in normalized:
+        return "qwen"
+    return fallback
+
+
+def legacy_agents_from_args(args: argparse.Namespace) -> list[dict]:
+    resolution = resolve_profile(args)
+    agents = []
+    for tool in requested_tools(args.tool, args):
+        if tool == "claude":
+            agent = {
+                "name": "claude",
+                "backend": "claude",
+                "model": resolution["effective_models"]["claude"],
+            }
+            if resolution["effective_effort"]["claude"]:
+                agent["effort"] = resolution["effective_effort"]["claude"]
+            agents.append(agent)
+        elif tool == "opencode":
+            model = resolution["effective_models"]["opencode"]
+            agents.append({
+                "name": agent_name_from_backend_model("opencode", model, "opencode"),
+                "backend": "opencode",
+                "model": model,
+            })
+        elif tool == "qwen":
+            model = resolution["effective_models"]["qwen"]
+            agents.append({
+                "name": agent_name_from_backend_model("opencode", model, "qwen"),
+                "backend": "opencode",
+                "model": model,
+            })
+        elif tool == "codex":
+            agent = {
+                "name": "codex",
+                "backend": "codex",
+                "model": resolution["effective_models"]["codex"],
+            }
+            if resolution["effective_effort"]["codex"]:
+                agent["effort"] = resolution["effective_effort"]["codex"]
+            agents.append(agent)
+    seen = {}
+    for agent in agents:
+        name = agent["name"]
+        count = seen.get(name, 0)
+        seen[name] = count + 1
+        if count:
+            agent["name"] = f"{name}-{count + 1}"
+    return agents
+
+
+def configured_agents_for_preferences(args: argparse.Namespace) -> list[dict]:
+    resolution = resolve_profile(args)
+    agents = []
+    for agent in getattr(args, "configured_agents", []):
+        saved_agent = dict(agent)
+        if "effort" not in saved_agent:
+            if saved_agent["backend"] == "claude" and resolution["effective_effort"]["claude"]:
+                saved_agent["effort"] = resolution["effective_effort"]["claude"]
+            if saved_agent["backend"] == "codex" and resolution["effective_effort"]["codex"]:
+                saved_agent["effort"] = resolution["effective_effort"]["codex"]
+        agents.append(saved_agent)
+    return agents
+
+
+def validate_preferences_payload(payload: object, path: Path) -> tuple[dict, list[str]]:
+    if not isinstance(payload, dict):
+        raise SystemExit(f"Preferences file must contain a JSON object: {path}")
+
+    schema_version = payload.get("schema_version")
+    if schema_version != PREFERENCES_SCHEMA_VERSION:
+        raise SystemExit(
+            f"Unsupported Panda preferences schema at {path}: {schema_version!r}. "
+            f"Expected {PREFERENCES_SCHEMA_VERSION}."
+        )
+
+    warnings = []
+    allowed_fields = set(PREFERENCE_FIELDS) | set(PREFERENCE_META_FIELDS)
+    preferences = {"schema_version": PREFERENCES_SCHEMA_VERSION}
+    for field, value in payload.items():
+        if field not in allowed_fields:
+            warnings.append(f"ignored_unknown_preference_field:{field}")
+            continue
+        if value is None:
+            continue
+        if field == "schema_version":
+            continue
+        if field in {"created_at", "updated_at"}:
+            if not isinstance(value, str):
+                warnings.append(f"ignored_invalid_preference_timestamp:{field}")
+                continue
+            preferences[field] = value
+            continue
+        if field == "profile" and isinstance(value, dict):
+            agents = profile_agents_from_preferences({"profile": value})
+            preferences["profile"] = {"agents": agents}
+            continue
+        if field in PREFERENCE_MODEL_FIELDS:
+            preferences[field] = validate_model_preference(field, value)
+            continue
+        if not isinstance(value, str):
+            raise SystemExit(f"Preference {field} must be a string.")
+        choices = PREFERENCE_FIELD_CHOICES.get(field)
+        if choices and value not in choices:
+            raise SystemExit(f"Preference {field} must be one of: {', '.join(choices)}")
+        preferences[field] = value
+
+    return preferences, warnings
+
+
+def read_preferences(path: Path) -> tuple[Optional[dict], list[str]]:
+    if not path.exists():
+        return None, []
+    try:
+        raw_preferences = read_json(path)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Malformed Panda preferences at {path}: {exc}") from exc
+    return validate_preferences_payload(raw_preferences, path)
+
+
+def apply_preferences(args: argparse.Namespace) -> None:
+    disabled, _ = preferences_disabled(args)
+    if disabled:
+        args.preferences_metadata = base_preferences_metadata(args)
+        return
+
+    path = default_preferences_path()
+    args.preferences_metadata = base_preferences_metadata(args)
+    preferences, warnings = read_preferences(path)
+    args.preferences_metadata["warnings"].extend(warnings)
+    if not preferences:
+        return
+
+    args.preferences_metadata["loaded"] = True
+    args.preferences_metadata["schema_version"] = preferences["schema_version"]
+    explicit_flags = getattr(args, "explicit_flags", set())
+    sourced_fields = set()
+    profile_agents = profile_agents_from_preferences(preferences)
+    if profile_agents:
+        if "tool" in explicit_flags or "agents" in explicit_flags:
+            args.preferences_metadata.setdefault("ignored_fields", {})["profile.agents"] = "explicit_agent_selection"
+        else:
+            args.configured_agents = profile_agents
+            sourced_fields.add("agents")
+            args.preferences_metadata.setdefault("applied_fields", []).append("profile.agents")
+    for field in PREFERENCE_FIELDS:
+        if field not in preferences:
+            continue
+        if field == "profile" and isinstance(preferences[field], dict):
+            continue
+        if field in explicit_flags:
+            args.preferences_metadata.setdefault("ignored_fields", {})[field] = "explicit_cli_flag"
+            continue
+        setattr(args, field, preferences[field])
+        sourced_fields.add(field)
+        args.preferences_metadata.setdefault("applied_fields", []).append(field)
+
+    args.preference_sourced_fields = sourced_fields
+    validate_preference_tool_availability(args)
+
+
+def validate_preference_tool_availability(args: argparse.Namespace) -> None:
+    if "agents" in getattr(args, "preference_sourced_fields", set()):
+        validate_agents_available(args.configured_agents, args, "Saved Panda preference")
+        return
+    if "tool" not in getattr(args, "preference_sourced_fields", set()):
+        return
+    if args.tool == "auto":
+        return
+    unavailable = [
+        tool
+        for tool in requested_tools(args.tool, args=None)
+        if not tool_is_available(tool, args)
+    ]
+    if unavailable:
+        unavailable_text = ", ".join(unavailable)
+        raise SystemExit(
+            f"Saved Panda preference requested tool={args.tool!r}, but {unavailable_text} "
+            "is unavailable. Use --tool to override, --ignore-preferences to bypass, "
+            "or --reset-preferences to clear saved preferences."
+        )
+
+
+def validate_agents_available(agents: list[dict], args: argparse.Namespace, source: str) -> None:
+    for agent in agents:
+        backend = agent["backend"]
+        if backend == "claude":
+            available = tool_is_available("claude", args)
+        elif backend == "opencode":
+            available = tool_is_available("opencode", args)
+        elif backend == "codex":
+            available = tool_is_available("codex", args)
+        else:
+            available = False
+        if not available:
+            raise SystemExit(
+                f"{source} requested agent {agent['name']!r} using {backend}, but {backend} is unavailable. "
+                "Use --agent or --tool to override, --ignore-preferences to bypass, "
+                "or --reset-preferences to clear saved preferences."
+            )
+
+
+def preference_manifest_metadata(args: argparse.Namespace) -> dict:
+    metadata = getattr(args, "preferences_metadata", None)
+    if not metadata:
+        return base_preferences_metadata(args)
+    return {
+        "enabled": bool(metadata.get("enabled")),
+        "path": metadata.get("path"),
+        "schema_version": metadata.get("schema_version"),
+        "loaded": bool(metadata.get("loaded")),
+        "applied_fields": list(metadata.get("applied_fields", [])),
+        "ignored_fields": dict(metadata.get("ignored_fields", {})),
+        "warnings": list(metadata.get("warnings", [])),
+    }
+
+
+def write_preferences_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    try:
+        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as file_obj:
+            file_obj.write(json.dumps(data, indent=2) + "\n")
+            file_obj.flush()
+            os.fsync(file_obj.fileno())
+        os.replace(tmp_path, path)
+        os.chmod(path, 0o600)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+
+def save_preferences(args: argparse.Namespace) -> int:
+    explicit_fields = [
+        field
+        for field in PREFERENCE_FIELDS
+        if field in getattr(args, "explicit_flags", set())
+    ]
+    explicit_agents = bool(getattr(args, "configured_agents", []))
+    if not explicit_fields and not explicit_agents:
+        raise SystemExit(
+            "--save-preferences requires at least one of: "
+            "--agent, --tool, --profile, --claude-model, --claude-effort, "
+            "--opencode-model, --qwen-model, --codex-model, or --codex-effort."
+        )
+
+    path = default_preferences_path()
+    existing: dict = {}
+    if not getattr(args, "ignore_preferences", False) and not env_flag_enabled("PANDA_NO_PREFERENCES"):
+        loaded, _ = read_preferences(path)
+        if loaded:
+            existing = loaded
+    now = now_iso()
+    payload = dict(existing)
+    payload["schema_version"] = PREFERENCES_SCHEMA_VERSION
+    payload.setdefault("created_at", now)
+    payload["updated_at"] = now
+    if explicit_agents:
+        payload = {
+            "schema_version": PREFERENCES_SCHEMA_VERSION,
+            "created_at": payload.get("created_at", now),
+            "updated_at": now,
+            "profile": {"agents": configured_agents_for_preferences(args)},
+        }
+    elif explicit_fields:
+        payload = {
+            "schema_version": PREFERENCES_SCHEMA_VERSION,
+            "created_at": payload.get("created_at", now),
+            "updated_at": now,
+            "profile": {"agents": legacy_agents_from_args(args)},
+        }
+
+    validated, warnings = validate_preferences_payload(payload, path)
+    for warning in warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+    write_preferences_json(path, validated)
+    print(f"Saved Panda preferences to {path}")
+    print(json.dumps(validated, indent=2))
+    return 0
+
+
+def show_preferences(args: argparse.Namespace) -> int:
+    path = default_preferences_path()
+    preferences, warnings = read_preferences(path)
+    print(f"Panda preferences path: {path}")
+    if not preferences:
+        print("No Panda preferences saved.")
+        return 0
+    for warning in warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+    print(json.dumps(preferences, indent=2))
+    return 0
+
+
+def reset_preferences(args: argparse.Namespace) -> int:
+    path = default_preferences_path()
+    if path.exists():
+        path.unlink()
+        print(f"Removed Panda preferences at {path}")
+    else:
+        print(f"No Panda preferences saved at {path}")
+    return 0
+
+
 def resolve_profile(args: argparse.Namespace) -> dict:
     profile_name = args.profile or ROLE_DEFAULT_PROFILES.get(args.role) or HARD_FALLBACK_PROFILE
     if args.profile:
-        profile_source = "cli"
+        if "profile" in getattr(args, "preference_sourced_fields", set()):
+            profile_source = "preferences"
+        else:
+            profile_source = "cli"
     elif args.role in ROLE_DEFAULT_PROFILES:
         profile_source = "role_default"
     else:
@@ -358,6 +888,12 @@ def profile_manifest_metadata(args: argparse.Namespace) -> dict:
 
 
 def active_models(args: argparse.Namespace) -> dict[str, str]:
+    configured_agents = getattr(args, "configured_agents", [])
+    if configured_agents:
+        return {
+            agent["name"]: agent["model"]
+            for agent in configured_agents
+        }
     resolution = get_profile_resolution(args)
     models = resolution["effective_models"]
     return {tool: models[tool] for tool in requested_tools(args.tool, args)}
@@ -894,11 +1430,15 @@ def new_session_state(args: argparse.Namespace, workspace: Path, session_id: str
         "requested_effort": dict(profile_metadata["requested_effort"]),
         "effort_support": dict(profile_metadata["effort_support"]),
         "applied_effort": dict(profile_metadata["applied_effort"]),
+        "preferences": preference_manifest_metadata(args),
+        "agents": [dict(agent) for agent in getattr(args, "configured_agents", [])],
         "turn_count": 0,
         "last_turn_status": None,
         "latest_stopping_suggestion": None,
         "runner_pid": None,
     }
+    for agent in getattr(args, "configured_agents", []):
+        state["tool_session_ids"].setdefault(agent["name"], None)
     state["protocol"] = args.protocol
     return state
 
@@ -924,24 +1464,35 @@ def inherit_session_args(args: argparse.Namespace, session: dict) -> None:
     explicit_flags = getattr(args, "explicit_flags", set())
     for field in ("tool", "mode", "role", "approval_mode", "execution", "protocol"):
         if field not in explicit_flags and session.get(field):
+            mark_preference_ignored(args, field, "session_state")
             setattr(args, field, session[field])
     if "profile" not in explicit_flags and session.get("profile"):
+        mark_preference_ignored(args, "profile", "session_state")
         args.profile = session["profile"]
 
     requested_models = session.get("requested_models") or {}
     requested_effort = session.get("requested_effort") or {}
     if "claude_model" not in explicit_flags and requested_models.get("claude"):
+        mark_preference_ignored(args, "claude_model", "session_state")
         args.claude_model = requested_models["claude"]
     if "opencode_model" not in explicit_flags and requested_models.get("opencode"):
+        mark_preference_ignored(args, "opencode_model", "session_state")
         args.opencode_model = requested_models["opencode"]
     if "qwen_model" not in explicit_flags and requested_models.get("qwen"):
+        mark_preference_ignored(args, "qwen_model", "session_state")
         args.qwen_model = requested_models["qwen"]
     if "codex_model" not in explicit_flags and requested_models.get("codex"):
+        mark_preference_ignored(args, "codex_model", "session_state")
         args.codex_model = requested_models["codex"]
     if "claude_effort" not in explicit_flags and requested_effort.get("claude"):
+        mark_preference_ignored(args, "claude_effort", "session_state")
         args.claude_effort = requested_effort["claude"]
     if "codex_effort" not in explicit_flags and requested_effort.get("codex"):
+        mark_preference_ignored(args, "codex_effort", "session_state")
         args.codex_effort = requested_effort["codex"]
+    if "agents" not in explicit_flags and "tool" not in explicit_flags and session.get("agents"):
+        mark_preference_ignored(args, "profile.agents", "session_state")
+        args.configured_agents = [dict(agent) for agent in session["agents"]]
     if args.tool == "auto" and "tool" not in explicit_flags and session.get("requested_tools"):
         args._auto_requested_tools = list(session["requested_tools"])
     args.profile_resolution = resolve_profile(args)
@@ -1237,9 +1788,24 @@ def opencode_serialization_enabled(args: argparse.Namespace) -> bool:
     return bool(getattr(args, "serialize_opencode", False)) or env_flag_enabled("PANDA_SERIALIZE_OPENCODE")
 
 
-def split_serialized_opencode_commands(commands: dict[str, list[str]]) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
-    serialized = {name: command for name, command in commands.items() if name in OPENCODE_BACKED_TOOLS}
-    parallel = {name: command for name, command in commands.items() if name not in OPENCODE_BACKED_TOOLS}
+def opencode_backed_command_names(args: argparse.Namespace) -> set[str]:
+    configured_agents = getattr(args, "configured_agents", [])
+    if configured_agents:
+        return {
+            agent["name"]
+            for agent in configured_agents
+            if agent["backend"] == "opencode"
+        }
+    return set(OPENCODE_BACKED_TOOLS)
+
+
+def split_serialized_opencode_commands(
+    commands: dict[str, list[str]],
+    opencode_backed_names: Optional[set[str]] = None,
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    opencode_names = set(OPENCODE_BACKED_TOOLS) if opencode_backed_names is None else opencode_backed_names
+    serialized = {name: command for name, command in commands.items() if name in opencode_names}
+    parallel = {name: command for name, command in commands.items() if name not in opencode_names}
     return parallel, serialized
 
 
@@ -1267,6 +1833,7 @@ def run_one_shot_commands(
     output_dir: Path,
     run_parallel: bool,
     serialize_opencode: bool,
+    opencode_backed_names: Optional[set[str]] = None,
 ) -> dict[str, dict]:
     if not run_parallel:
         return run_one_shot_command_group(commands, run_cwd, timeout, dry_run, output_dir)
@@ -1274,7 +1841,7 @@ def run_one_shot_commands(
     raw_results: dict[str, dict] = {}
     parallel_commands, serialized_opencode = ({}, {})
     if serialize_opencode:
-        parallel_commands, serialized_opencode = split_serialized_opencode_commands(commands)
+        parallel_commands, serialized_opencode = split_serialized_opencode_commands(commands, opencode_backed_names)
     else:
         parallel_commands = commands
 
@@ -1352,6 +1919,8 @@ def resolve_auto_tools(args: argparse.Namespace) -> list[str]:
 
 
 def requested_tools(tool: str, args: Optional[argparse.Namespace] = None) -> list[str]:
+    if args is not None and getattr(args, "configured_agents", []):
+        return [agent["name"] for agent in args.configured_agents]
     if tool == "all":
         return list(LEGACY_ALL_TOOLS)
     if tool == "auto":
@@ -1362,7 +1931,7 @@ def requested_tools(tool: str, args: Optional[argparse.Namespace] = None) -> lis
 
 
 def tool_selection_warnings(args: argparse.Namespace) -> list[dict]:
-    if args.tool != "auto":
+    if getattr(args, "configured_agents", []) or args.tool != "auto":
         return []
     requested_tools(args.tool, args)
     return [
@@ -1377,6 +1946,10 @@ def build_commands(
     run_cwd: Path,
     session: Optional[dict] = None,
 ) -> tuple[dict[str, list[str]], set[str]]:
+    configured_agents = getattr(args, "configured_agents", [])
+    if configured_agents:
+        return build_agent_commands(args, configured_agents, prompt, run_cwd, session=session)
+
     requested = requested_tools(args.tool, args)
     commands: dict[str, list[str]] = {}
     json_tools: set[str] = set()
@@ -1483,6 +2056,111 @@ def build_commands(
     return commands, json_tools
 
 
+def build_agent_commands(
+    args: argparse.Namespace,
+    agents: list[dict],
+    prompt: str,
+    run_cwd: Path,
+    session: Optional[dict] = None,
+) -> tuple[dict[str, list[str]], set[str]]:
+    commands: dict[str, list[str]] = {}
+    json_tools: set[str] = set()
+    profile_resolution = get_profile_resolution(args)
+
+    for agent in agents:
+        name = agent["name"]
+        backend = agent["backend"]
+        model = agent["model"]
+        if backend == "claude":
+            claude_bin = shutil.which(args.claude_bin) or args.claude_bin
+            command = [
+                claude_bin,
+                "-p",
+                "--output-format",
+                "text",
+            ]
+            if session is None:
+                command.append("--no-session-persistence")
+            else:
+                tool_sessions = session.setdefault("tool_session_ids", {})
+                claude_session_id = tool_sessions.get(name)
+                if claude_session_id:
+                    command.extend(["--resume", claude_session_id])
+                else:
+                    claude_session_id = str(uuid.uuid4())
+                    if not args.dry_run:
+                        tool_sessions[name] = claude_session_id
+                    command.extend(["--session-id", claude_session_id])
+            command.extend(["--model", model])
+            requested_effort = agent.get("effort") or profile_resolution["effective_effort"]["claude"]
+            supports_effort = claude_supports_effort(claude_bin)
+            applied_effort = requested_effort if requested_effort and supports_effort else None
+            record_claude_effort_support(args, supports_effort, applied_effort)
+            if applied_effort:
+                command.extend(["--effort", applied_effort])
+            if args.mode == "advisory":
+                command.extend(["--permission-mode", "plan", "--tools="])
+            else:
+                permission_mode = "bypassPermissions" if args.approval_mode == "unsupervised" else "default"
+                command.extend(["--permission-mode", permission_mode])
+            if args.mode == "explore":
+                command.extend(["--allowedTools=Read,Grep,Glob,LS,Bash,WebFetch,WebSearch"])
+            command.append(prompt)
+            commands[name] = command
+            continue
+
+        if backend == "opencode":
+            opencode_bin = shutil.which(args.opencode_bin) or args.opencode_bin
+            title = f"panda-{args.mode}-{args.role}-{name}"
+            command = [
+                opencode_bin,
+                "run",
+                "--pure",
+                "--title",
+                title,
+                "--dir",
+                str(run_cwd),
+            ]
+            if session is not None:
+                json_tools.add(name)
+                opencode_session_id = session.setdefault("tool_session_ids", {}).get(name)
+                if opencode_session_id:
+                    command.extend(["--session", opencode_session_id])
+                command.extend(["--format", "json"])
+            if args.approval_mode == "unsupervised":
+                command.append("--dangerously-skip-permissions")
+            command.extend(["--model", model])
+            command.append(prompt)
+            commands[name] = command
+            continue
+
+        if backend == "codex":
+            codex_bin = shutil.which(args.codex_bin) or args.codex_bin
+            effort = agent.get("effort") or profile_resolution["effective_effort"]["codex"]
+            command = [
+                codex_bin,
+                "--ask-for-approval",
+                "never",
+                "exec",
+                "--ephemeral",
+                "--sandbox",
+                "read-only",
+                "--color",
+                "never",
+                "-C",
+                str(run_cwd),
+                "--model",
+                model,
+            ]
+            if effort:
+                command.extend(["-c", f'model_reasoning_effort="{effort}"'])
+            record_codex_effort(args, effort)
+            command.append(prompt)
+            commands[name] = command
+
+    return commands, json_tools
+
+
 def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     output_dir = args.output_dir or Path(tempfile.gettempdir()) / "panda-consults" / stamp
@@ -1504,6 +2182,7 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
         output_dir,
         run_parallel,
         serialize_opencode,
+        opencode_backed_command_names(args),
     )
 
     for result in raw_results.values():
@@ -1544,6 +2223,8 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
         "run_cwd": str(run_cwd),
         "requested_tools": requested_tools(args.tool, args),
         "serialize_opencode": serialize_opencode,
+        "preferences": preference_manifest_metadata(args),
+        "agents": [dict(agent) for agent in getattr(args, "configured_agents", [])],
         "tools": results,
         "telemetry": build_telemetry(
             raw_results,
@@ -1759,6 +2440,7 @@ def run_session_commands(
     json_tools: set[str],
     run_parallel: bool,
     serialize_opencode: bool,
+    opencode_backed_names: Optional[set[str]] = None,
 ) -> dict[str, dict]:
     if not run_parallel:
         return run_session_command_group(
@@ -1774,7 +2456,7 @@ def run_session_commands(
         return run_session_tools(commands, run_cwd, timeout, straggler_timeout, dry_run, output_dir, json_tools)
 
     raw_results = {}
-    parallel_commands, serialized_opencode = split_serialized_opencode_commands(commands)
+    parallel_commands, serialized_opencode = split_serialized_opencode_commands(commands, opencode_backed_names)
     with ThreadPoolExecutor(max_workers=max(1, len(parallel_commands) + bool(serialized_opencode))) as executor:
         futures = {}
         if parallel_commands:
@@ -2016,6 +2698,8 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
             "requested_effort": dict(profile_metadata["requested_effort"]),
             "effort_support": dict(profile_metadata["effort_support"]),
             "applied_effort": dict(profile_metadata["applied_effort"]),
+            "preferences": preference_manifest_metadata(args),
+            "agents": [dict(agent) for agent in getattr(args, "configured_agents", [])],
         })
         session["protocol"] = args.protocol
         if recovery_notes:
@@ -2034,6 +2718,7 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
             json_tools,
             run_parallel,
             serialize_opencode,
+            opencode_backed_command_names(args),
         )
 
         for name in json_tools:
@@ -2103,6 +2788,8 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
             "run_cwd": str(run_cwd),
             "requested_tools": requested_tools(args.tool, args),
             "serialize_opencode": serialize_opencode,
+            "preferences": preference_manifest_metadata(args),
+            "agents": [dict(agent) for agent in getattr(args, "configured_agents", [])],
             "session_memory": memory_info,
             "recovery_notes": recovery_notes,
             "straggler_timeout": args.straggler_timeout,
@@ -2134,6 +2821,12 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
 
 def main() -> int:
     args = parse_args()
+    if args.show_preferences:
+        return show_preferences(args)
+    if args.reset_preferences:
+        return reset_preferences(args)
+    if args.save_preferences:
+        return save_preferences(args)
     user_prompt = read_prompt(args)
     if args.session is not None:
         return run_session(args, user_prompt)
