@@ -306,13 +306,27 @@ python3 -m pip install -e .</code></pre>
               <span>Requirements</span>
               <ul>
                 <li>Python 3.9+</li>
-                <li>Claude Code or OpenCode installed</li>
+                <li>
+                  <a href="https://docs.anthropic.com/en/docs/claude-code/overview" target="_blank" rel="noreferrer">
+                    Claude Code
+                  </a>
+                  installed
+                </li>
+                <li>
+                  <a href="https://opencode.ai/" target="_blank" rel="noreferrer">OpenCode</a>
+                  installed
+                </li>
+                <li>
+                  <a href="https://developers.openai.com/codex/cli" target="_blank" rel="noreferrer">Codex CLI</a>
+                  installed for portable fallback runs
+                </li>
                 <li>CLI auth configured</li>
                 <li>Panda skill available to Codex</li>
               </ul>
               <p>
-                For full multi-advisor runs, install both Claude Code and OpenCode. Panda can still run with
-                whichever advisor CLI is available.
+                At least one advisor CLI is required: Claude Code, OpenCode, or Codex. For full
+                multi-advisor runs, install all available cores. Panda can still run with whichever
+                advisor CLI is available.
               </p>
             </div>
           </div>
