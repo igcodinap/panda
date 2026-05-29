@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "created_at": "2026-05-25T22:34:01.120154+00:00",
-  "run_dir": "/private/tmp/panda-eval/20260525-hard-local",
+  "run_dir": "<panda-eval-root>/20260525-hard-local",
   "results": [
     {
       "command": [
-        "/Library/Developer/CommandLineTools/usr/bin/python3",
+        "python3",
         "-W",
         "error::ResourceWarning",
         "-m",
@@ -15,15 +15,15 @@
       "returncode": 0,
       "timed_out": false,
       "wall_seconds": 4.999,
-      "stdout_path": "/private/tmp/panda-eval/20260525-hard-local/canary/unittest/stdout.txt",
-      "stderr_path": "/private/tmp/panda-eval/20260525-hard-local/canary/unittest/stderr.txt",
+      "stdout_path": "<panda-eval-root>/20260525-hard-local/canary/unittest/stdout.txt",
+      "stderr_path": "<panda-eval-root>/20260525-hard-local/canary/unittest/stderr.txt",
       "name": "unit_resourcewarning",
       "ok": true
     },
     {
       "command": [
-        "/Library/Developer/CommandLineTools/usr/bin/python3",
-        "/Users/howdy/Documents/Codex/projects/panda/scripts/consult_ai_team.py",
+        "python3",
+        "scripts/consult_ai_team.py",
         "--tool",
         "all",
         "--mode",
@@ -35,18 +35,18 @@
         "--serialize-opencode",
         "--dry-run",
         "--output-dir",
-        "/private/tmp/panda-eval/20260525-hard-local/canary/panda-dry-run",
+        "<panda-eval-root>/20260525-hard-local/canary/panda-dry-run",
         "--prompt",
         "Panda eval canary: dry-run artifact validation."
       ],
       "returncode": 0,
       "timed_out": false,
       "wall_seconds": 0.206,
-      "stdout_path": "/private/tmp/panda-eval/20260525-hard-local/canary/panda-dry-run-command/stdout.txt",
-      "stderr_path": "/private/tmp/panda-eval/20260525-hard-local/canary/panda-dry-run-command/stderr.txt",
+      "stdout_path": "<panda-eval-root>/20260525-hard-local/canary/panda-dry-run-command/stdout.txt",
+      "stderr_path": "<panda-eval-root>/20260525-hard-local/canary/panda-dry-run-command/stderr.txt",
       "name": "panda_dry_run",
       "artifact_validation": {
-        "output_dir": "/private/tmp/panda-eval/20260525-hard-local/canary/panda-dry-run",
+        "output_dir": "<panda-eval-root>/20260525-hard-local/canary/panda-dry-run",
         "ok": true,
         "artifact_failures": [],
         "panda_core_status": {
@@ -78,8 +78,8 @@
     },
     {
       "command": [
-        "/Library/Developer/CommandLineTools/usr/bin/python3",
-        "/Users/howdy/Documents/Codex/projects/panda/scripts/consult_ai_team.py",
+        "python3",
+        "scripts/consult_ai_team.py",
         "--tool",
         "all",
         "--mode",
@@ -89,18 +89,18 @@
         "--timeout",
         "600",
         "--output-dir",
-        "/private/tmp/panda-eval/20260525-hard-local/canary/panda-real",
+        "<panda-eval-root>/20260525-hard-local/canary/panda-real",
         "--prompt",
         "Panda eval canary: inspect this Panda repo at a high level. Return one sentence on whether the eval harness should preserve compact artifacts. Do not edit files."
       ],
       "returncode": 0,
       "timed_out": false,
       "wall_seconds": 40.462,
-      "stdout_path": "/private/tmp/panda-eval/20260525-hard-local/canary/panda-real-command/stdout.txt",
-      "stderr_path": "/private/tmp/panda-eval/20260525-hard-local/canary/panda-real-command/stderr.txt",
+      "stdout_path": "<panda-eval-root>/20260525-hard-local/canary/panda-real-command/stdout.txt",
+      "stderr_path": "<panda-eval-root>/20260525-hard-local/canary/panda-real-command/stderr.txt",
       "name": "panda_real_explore",
       "artifact_validation": {
-        "output_dir": "/private/tmp/panda-eval/20260525-hard-local/canary/panda-real",
+        "output_dir": "<panda-eval-root>/20260525-hard-local/canary/panda-real",
         "ok": true,
         "artifact_failures": [],
         "panda_core_status": {

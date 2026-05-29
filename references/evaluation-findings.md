@@ -2,12 +2,20 @@
 
 This note preserves the early evaluation lessons for Panda so the rationale does not live only in chat history.
 
+## Public Artifact Policy
+
+Public evaluation evidence is curated by default. Commit compact summaries,
+methodology notes, and redacted aggregate records; review raw logs, raw patches,
+machine-local transcripts, and benchmark-specific artifacts before publishing
+them. Treat solve-rate lift as an active evaluation question unless a run is
+clean, blinded enough for the claim, and documented with contamination notes.
+
 ## 2026-05-25 Pilot Summary
 
 Run directory:
 
 ```text
-/private/tmp/panda-eval/20260525-nightly
+<panda-eval-root>/20260525-nightly
 ```
 
 Protocol:
@@ -88,7 +96,7 @@ The local implementation runbook for this next phase is `references/evaluation-h
 Run directory:
 
 ```text
-/private/tmp/panda-eval/20260525-hard-local
+<panda-eval-root>/20260525-hard-local
 ```
 
 Protocol:
@@ -127,7 +135,7 @@ Portable proof artifacts:
 
 - The 5-task pilot result JSON files are committed under `references/evaluation-results/20260525-nightly/` as compact per-task summaries.
 - The hard-local run manifest, canary result, scout/replay result JSON files, and summary are committed under `references/evaluation-results/20260525-hard-local/`.
-- The hard-local patches and official evaluator logs remain under `/private/tmp/panda-eval/20260525-hard-local`.
+- The hard-local patches and official evaluator logs remain under `<panda-eval-root>/20260525-hard-local`.
 - Raw local logs under `logs/` are intentionally not part of the portable evidence set unless a future publication needs them; the committed docs and JSON summaries preserve the results without carrying large machine-local transcripts.
 
 ## Benchmark Notes
@@ -145,7 +153,7 @@ Panda is already credible as a review and confidence amplifier. The runner produ
 Additional scout tasks were run from the same hard-local directory:
 
 ```text
-/private/tmp/panda-eval/20260525-hard-local
+<panda-eval-root>/20260525-hard-local
 ```
 
 New scout/replay results:
@@ -200,7 +208,7 @@ The next hard-local rerun should use the additive contract-first workflow rather
 Run directory:
 
 ```text
-/private/tmp/panda-eval/20260526-contract-first-v2
+<panda-eval-root>/20260526-contract-first-v2
 ```
 
 Protocol:
@@ -243,7 +251,7 @@ references/evaluation-results/20260526-contract-first-v2/
 Run directory:
 
 ```text
-/private/tmp/panda-eval/20260527-diagnosis
+<panda-eval-root>/20260527-diagnosis
 ```
 
 Protocol:
@@ -289,7 +297,7 @@ references/evaluation-results/20260527-diagnosis/
 Run directory:
 
 ```text
-/private/tmp/panda-eval/20260527-diagnosis
+<panda-eval-root>/20260527-diagnosis
 ```
 
 Protocol:

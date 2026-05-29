@@ -21,9 +21,9 @@
   "codex_implementation_error": false,
   "evidence_was_actionable": false,
   "second_pass_used": true,
-  "second_pass_prompt_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/panda_replay_second_pass/panda_prompt.txt",
+  "second_pass_prompt_path": "<panda-eval-root>/20260525-hard-local/tasks/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/panda_replay_second_pass/panda_prompt.txt",
   "advice_quality_notes": "Recorded as contaminated: second-pass Panda output referenced the target/ground-truth commit and specific file-change counts, violating the no-gold-leakage rule. Do not use this as a clean rescue attempt.",
-  "panda_output_dir": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/panda_replay_second_pass/panda",
+  "panda_output_dir": "<panda-eval-root>/20260525-hard-local/tasks/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/panda_replay_second_pass/panda",
   "panda_core_status": {
     "claude": {
       "status": "success",

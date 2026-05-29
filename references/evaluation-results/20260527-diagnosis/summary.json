@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "created_at": "2026-05-27T13:57:49.520749+00:00",
-  "run_dir": "/private/tmp/panda-eval/20260527-diagnosis",
+  "run_dir": "<panda-eval-root>/20260527-diagnosis",
   "canary_ok": null,
   "metrics": {
     "codex_alone": {

@@ -1,12 +1,44 @@
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "panda"
-version = "0.1.0"
+version = "1.0.0"
 description = "Panda local multi-core consultation runner and evaluation harness."
+readme = "README.md"
 requires-python = ">=3.9"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [
+  { name = "Panda contributors" },
+]
+maintainers = [
+  { name = "Panda contributors" },
+]
+keywords = [
+  "ai-agents",
+  "codex",
+  "evaluation",
+  "llm",
+  "multi-agent",
+  "software-engineering",
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Topic :: Software Development :: Quality Assurance",
+  "Topic :: Software Development :: Testing",
+]
+
+[project.urls]
+Homepage = "https://github.com/igcodinap/panda"
+Repository = "https://github.com/igcodinap/panda"
+Issues = "https://github.com/igcodinap/panda/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

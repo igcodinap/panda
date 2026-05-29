@@ -111,7 +111,7 @@
   },
   "canary": {
     "ok": true,
-    "result_path": "/private/tmp/panda-eval/20260525-hard-local/canary/result.json",
+    "result_path": "<panda-eval-root>/20260525-hard-local/canary/result.json",
     "claude_budget_failure": false
   },
   "budget_failures": []

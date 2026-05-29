@@ -7,7 +7,7 @@ Use this workflow to test whether Panda improves Codex outcomes on tasks where C
 ```bash
 python3 scripts/panda_eval.py init \
   --eval-mode hard-local \
-  --run-dir /private/tmp/panda-eval/$(date +%Y%m%d)-hard-local
+  --run-dir <panda-eval-root>/$(date +%Y%m%d)-hard-local
 ```
 
 Hard-local runs use:
@@ -24,7 +24,7 @@ Prefer a local exported records file when you already have one:
 
 ```bash
 python3 scripts/panda_eval.py select-hard \
-  --run-dir /private/tmp/panda-eval/YYYYMMDD-hard-local \
+  --run-dir <panda-eval-root>/YYYYMMDD-hard-local \
   --records-file /path/to/swebench-records.json \
   --target-count 20 \
   --repo-cap 3
@@ -34,7 +34,7 @@ To allow Hugging Face dataset loading from the network/cache:
 
 ```bash
 python3 scripts/panda_eval.py select-hard \
-  --run-dir /private/tmp/panda-eval/YYYYMMDD-hard-local \
+  --run-dir <panda-eval-root>/YYYYMMDD-hard-local \
   --allow-network
 ```
 
@@ -71,7 +71,7 @@ Record every scout result:
 
 ```bash
 python3 scripts/panda_eval.py record \
-  --run-dir /private/tmp/panda-eval/YYYYMMDD-hard-local \
+  --run-dir <panda-eval-root>/YYYYMMDD-hard-local \
   --task-id TASK_ID \
   --variant codex_alone_scout \
   --tests-passed false \
@@ -109,7 +109,7 @@ Create a benchmark-safe Panda workspace first. The destination is a source copy 
 
 ```bash
 python3 scripts/panda_eval.py prepare-workspace \
-  --run-dir /private/tmp/panda-eval/YYYYMMDD-hard-local \
+  --run-dir <panda-eval-root>/YYYYMMDD-hard-local \
   --task-id TASK_ID \
   --source-workspace /path/to/base/task/repo
 ```
@@ -118,7 +118,7 @@ The command writes `workspace_metadata.json` under a safe task directory with co
 
 ```bash
 python3 scripts/panda_eval.py check-workspace \
-  --workspace /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace \
+  --workspace <panda-eval-root>/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace \
   --strict
 ```
 
@@ -126,9 +126,9 @@ Then generate the first-pass contract review prompt:
 
 ```bash
 python3 scripts/panda_eval.py prepare-first-pass \
-  --run-dir /private/tmp/panda-eval/YYYYMMDD-hard-local \
+  --run-dir <panda-eval-root>/YYYYMMDD-hard-local \
   --task-id TASK_ID \
-  --workspace /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace
+  --workspace <panda-eval-root>/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace
 ```
 
 Run the printed `consult_ai_team.py` command. It will look like:
@@ -140,9 +140,9 @@ python3 scripts/consult_ai_team.py \
   --role implementation-review \
   --profile fast \
   --timeout 600 \
-  --output-dir /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay/panda \
-  --prompt-file /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay/panda_prompt.txt \
-  --workspace /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace
+  --output-dir <panda-eval-root>/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay/panda \
+  --prompt-file <panda-eval-root>/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay/panda_prompt.txt \
+  --workspace <panda-eval-root>/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace
 ```
 
 The prompt asks for a contract map, local test evidence, likely evaluator assertions, recommendation, alternative, risks, falsifiers, and verification plan. It must not include gold `patch`, `test_patch`, `FAIL_TO_PASS`, hidden test source, target commit details, raw commit SHAs, or hardness metadata.
@@ -153,14 +153,14 @@ Record replay results:
 
 ```bash
 python3 scripts/panda_eval.py record \
-  --run-dir /private/tmp/panda-eval/YYYYMMDD-hard-local \
+  --run-dir <panda-eval-root>/YYYYMMDD-hard-local \
   --task-id TASK_ID \
   --variant panda_replay \
   --tests-passed true \
   --classification accepted \
   --wall-seconds 900 \
-  --panda-output-dir /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay/panda \
-  --workspace-metadata-path /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace_metadata.json \
+  --panda-output-dir <panda-eval-root>/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay/panda \
+  --workspace-metadata-path <panda-eval-root>/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace_metadata.json \
   --workspace-isolated true \
   --evidence-used \
   --patch-path /path/to/patch.diff \
@@ -175,12 +175,12 @@ Use second pass only when the first Panda replay succeeded, Codex produced a pat
 
 ```bash
 python3 scripts/panda_eval.py prepare-second-pass \
-  --run-dir /private/tmp/panda-eval/YYYYMMDD-hard-local \
+  --run-dir <panda-eval-root>/YYYYMMDD-hard-local \
   --task-id TASK_ID \
-  --first-pass-panda-output-dir /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay/panda \
+  --first-pass-panda-output-dir <panda-eval-root>/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay/panda \
   --patch-path /path/to/patch.diff \
   --test-output-path /path/to/swebench-report-or-stdout.log \
-  --workspace /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace
+  --workspace <panda-eval-root>/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace
 ```
 
 The command writes `panda_prompt.txt`, records prompt metadata, and prints the exact `consult_ai_team.py --mode explore --role debugging` command to run. The prompt includes capped task context, first-pass evidence summaries, a capped patch excerpt, failing test names, and nearby error lines. It references artifact paths instead of embedding raw logs, and it must not include gold `patch` or `test_patch` content, raw commit SHAs, target commit details, or hidden-test-derived hardness stats.
@@ -189,16 +189,16 @@ Record second-pass results separately:
 
 ```bash
 python3 scripts/panda_eval.py record \
-  --run-dir /private/tmp/panda-eval/YYYYMMDD-hard-local \
+  --run-dir <panda-eval-root>/YYYYMMDD-hard-local \
   --task-id TASK_ID \
   --variant panda_replay_second_pass \
   --tests-passed false \
   --accepted false \
   --classification failed_tests \
   --wall-seconds 900 \
-  --panda-output-dir /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay_second_pass/panda \
-  --second-pass-prompt-path /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay_second_pass/panda_prompt.txt \
-  --workspace-metadata-path /private/tmp/panda-eval/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace_metadata.json \
+  --panda-output-dir <panda-eval-root>/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay_second_pass/panda \
+  --second-pass-prompt-path <panda-eval-root>/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/panda_replay_second_pass/panda_prompt.txt \
+  --workspace-metadata-path <panda-eval-root>/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace_metadata.json \
   --workspace-isolated true \
   --evidence-used \
   --patch-path /path/to/patch.diff \
@@ -211,7 +211,7 @@ Optional scoring fields can be added when the run is reviewed: `--panda-directio
 
 ```bash
 python3 scripts/panda_eval.py summarize \
-  --run-dir /private/tmp/panda-eval/YYYYMMDD-hard-local
+  --run-dir <panda-eval-root>/YYYYMMDD-hard-local
 ```
 
 Hard-local metrics include:

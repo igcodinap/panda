@@ -13,7 +13,7 @@
   "claude_budget_failure": false,
   "evidence_used": false,
   "notes": "Accepted by official SWE-bench Pro evaluator after the final allowed scout loop. Local old public tests diverged from benchmark contract; first rerun had a redacted raw-sample pass_to_pass typo that reported 0 despite all selected tests passing, corrected and rerun to Overall accuracy 1.0.",
-  "patch_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_future-architect__vuls-3c1489e588dacea455ccf4c352a3b1006902e2d4/codex_alone_scout/patch.diff",
-  "test_output_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_future-architect__vuls-3c1489e588dacea455ccf4c352a3b1006902e2d4/codex_alone_scout/pro_eval/instance_future-architect__vuls-3c1489e588dacea455ccf4c352a3b1006902e2d4/codex_alone_scout_stdout.log",
+  "patch_path": "<panda-eval-root>/20260525-hard-local/tasks/instance_future-architect__vuls-3c1489e588dacea455ccf4c352a3b1006902e2d4/codex_alone_scout/patch.diff",
+  "test_output_path": "<panda-eval-root>/20260525-hard-local/tasks/instance_future-architect__vuls-3c1489e588dacea455ccf4c352a3b1006902e2d4/codex_alone_scout/pro_eval/instance_future-architect__vuls-3c1489e588dacea455ccf4c352a3b1006902e2d4/codex_alone_scout_stdout.log",
   "recorded_at": "2026-05-26T22:37:54.713659+00:00"
 }

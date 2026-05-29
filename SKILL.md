@@ -30,15 +30,21 @@ Patch mode is disabled. If candidate code is useful, ask collaborators for propo
 
 ## Consultation Runner
 
-Use the bundled runner for collaborative exploration:
+Use the bundled runner for collaborative exploration. From the repository root:
 
 ```bash
-python3 /Users/howdy/.codex/skills/panda/scripts/consult_ai_team.py \
+python3 scripts/consult_ai_team.py \
   --tool all \
   --mode explore \
   --role implementation-review \
   --prompt "We need to implement X. Constraints: Y. Current plan: Z. What risks, alternatives, and tests should Codex consider?"
 ```
+
+Prerequisites:
+
+- `claude` is available on `PATH`, or `CLAUDE_BIN` points to the Claude Code CLI.
+- `opencode` is available on `PATH`, or `OPENCODE_BIN` points to the OpenCode CLI.
+- Both CLIs are locally authenticated before Panda is invoked.
 
 The runner:
 
@@ -74,7 +80,7 @@ Role defaults:
 Use `fast` for quick checks:
 
 ```bash
-python3 /Users/howdy/.codex/skills/panda/scripts/consult_ai_team.py \
+python3 scripts/consult_ai_team.py \
   --tool all \
   --profile fast \
   --prompt "Quickly sanity-check this approach."
@@ -83,7 +89,7 @@ python3 /Users/howdy/.codex/skills/panda/scripts/consult_ai_team.py \
 Planning and research default to `deep` by role:
 
 ```bash
-python3 /Users/howdy/.codex/skills/panda/scripts/consult_ai_team.py \
+python3 scripts/consult_ai_team.py \
   --tool all \
   --role planning \
   --prompt "Create an implementation plan for this change."
@@ -92,7 +98,7 @@ python3 /Users/howdy/.codex/skills/panda/scripts/consult_ai_team.py \
 Pin models when repeatability matters, or combine a profile with explicit overrides:
 
 ```bash
-python3 /Users/howdy/.codex/skills/panda/scripts/consult_ai_team.py \
+python3 scripts/consult_ai_team.py \
   --tool all \
   --mode explore \
   --profile deep \
@@ -109,7 +115,7 @@ Resolution precedence is: explicit `--claude-model`, `--claude-effort`, `--openc
 Use session mode when the user wants a multi-turn Panda conversation:
 
 ```bash
-python3 /Users/howdy/.codex/skills/panda/scripts/consult_ai_team.py \
+python3 scripts/consult_ai_team.py \
   --session \
   --tool all \
   --mode explore \
@@ -120,7 +126,7 @@ python3 /Users/howdy/.codex/skills/panda/scripts/consult_ai_team.py \
 The runner prints a session ID. Continue with:
 
 ```bash
-python3 /Users/howdy/.codex/skills/panda/scripts/consult_ai_team.py \
+python3 scripts/consult_ai_team.py \
   --session "<session-id>" \
   --prompt "Follow-up from the user: ..."
 ```
@@ -163,7 +169,7 @@ Please return:
 - Verification plan
 ```
 
-For deeper prompt patterns, read `references/prompt-patterns.md`. For the Panda V2 philosophy, scientific rationale, architecture, benchmark experience, and token-cost discussion, read `references/panda-v2-philosophy.md`.
+For deeper prompt patterns, read `references/prompt-patterns.md`. For the Panda V2 philosophy, scientific rationale, architecture, benchmark experience, and token-cost discussion, read `references/panda-v2-philosophy.md`. For the annotated paper review behind the design, read `references/research-foundations.md`.
 
 ## Guardrails
 

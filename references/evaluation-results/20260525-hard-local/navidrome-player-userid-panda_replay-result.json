@@ -13,14 +13,14 @@
   "claude_budget_failure": false,
   "evidence_used": true,
   "notes": "First-pass Panda ran cleanly with all three cores and no Claude budget/rate/auth failure. Evidence converged on canonicalizing the authenticated username; Codex implemented that bounded advice and local core/persistence tests passed, but official tests failed at compile time because the benchmark also expects Player UserId/Username/IP API fields. This confirms first-pass Panda missed the deeper API-contract change and should go to second-pass recovery.",
-  "patch_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/panda_replay/patch.diff",
-  "test_output_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/panda_replay/pro_eval/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/panda_replay_stdout.log",
+  "patch_path": "<panda-eval-root>/20260525-hard-local/tasks/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/panda_replay/patch.diff",
+  "test_output_path": "<panda-eval-root>/20260525-hard-local/tasks/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/panda_replay/pro_eval/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/panda_replay_stdout.log",
   "recorded_at": "2026-05-26T22:59:53.492427+00:00",
   "panda_direction_correct": true,
   "panda_missed_contract": true,
   "codex_implementation_error": false,
   "evidence_was_actionable": true,
-  "panda_output_dir": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/panda_replay/panda",
+  "panda_output_dir": "<panda-eval-root>/20260525-hard-local/tasks/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/panda_replay/panda",
   "panda_core_status": {
     "claude": {
       "status": "success",

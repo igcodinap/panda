@@ -13,7 +13,7 @@
   "claude_budget_failure": false,
   "evidence_used": false,
   "notes": "Codex-alone scout stopped after the allowed official loops. The patch fixed the initial UserId/Username/IP compile contract and included the missing migration, but official tests still failed around player repository equality, IP defaults, user_name compatibility leakage, update column handling, and a FK case. This is a clean Panda replay candidate.",
-  "patch_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/codex_alone_scout/patch.diff",
-  "test_output_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/codex_alone_scout/pro_eval/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/codex_alone_scout_stdout.log",
+  "patch_path": "<panda-eval-root>/20260525-hard-local/tasks/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/codex_alone_scout/patch.diff",
+  "test_output_path": "<panda-eval-root>/20260525-hard-local/tasks/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/codex_alone_scout/pro_eval/instance_navidrome__navidrome-fa85e2a7816a6fe3829a4c0d8e893e982b0985da/codex_alone_scout_stdout.log",
   "recorded_at": "2026-05-26T22:51:26.729637+00:00"
 }

@@ -13,7 +13,7 @@
   "claude_budget_failure": false,
   "evidence_used": false,
   "notes": "Accepted by official SWE-bench Pro local Docker evaluator after focused scout repair. Public model outcome metadata: 9/9 failed.",
-  "patch_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_element-hq__element-web-4fec436883b601a3cac2d4a58067e597f737b817-vnan/codex_alone_scout/patch.diff",
-  "test_output_path": "/private/tmp/panda-eval/20260525-hard-local/tasks/instance_element-hq__element-web-4fec436883b601a3cac2d4a58067e597f737b817-vnan/codex_alone_scout/pro_eval/instance_element-hq__element-web-4fec436883b601a3cac2d4a58067e597f737b817-vnan/codex_alone_scout_stdout.log",
+  "patch_path": "<panda-eval-root>/20260525-hard-local/tasks/instance_element-hq__element-web-4fec436883b601a3cac2d4a58067e597f737b817-vnan/codex_alone_scout/patch.diff",
+  "test_output_path": "<panda-eval-root>/20260525-hard-local/tasks/instance_element-hq__element-web-4fec436883b601a3cac2d4a58067e597f737b817-vnan/codex_alone_scout/pro_eval/instance_element-hq__element-web-4fec436883b601a3cac2d4a58067e597f737b817-vnan/codex_alone_scout_stdout.log",
   "recorded_at": "2026-05-25T23:39:00.734309+00:00"
 }

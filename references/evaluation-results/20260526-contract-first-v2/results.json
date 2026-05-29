@@ -21,9 +21,9 @@
       "recorded_at": "2026-05-27T02:28:54.196746+00:00",
       "workspace_preparation": {
         "workspace_isolated": true,
-        "workspace_metadata_path": "/private/tmp/panda-eval/20260526-contract-first-v2/tasks/instance_qutebrowser__qutebrowser-_redacted-sha/workspace_metadata.json"
+        "workspace_metadata_path": "<panda-eval-root>/20260526-contract-first-v2/tasks/instance_qutebrowser__qutebrowser-_redacted-sha/workspace_metadata.json"
       },
-      "panda_output_dir": "/private/tmp/panda-eval/20260526-contract-first-v2/tasks/instance_qutebrowser__qutebrowser-_redacted-sha/panda_replay/panda",
+      "panda_output_dir": "<panda-eval-root>/20260526-contract-first-v2/tasks/instance_qutebrowser__qutebrowser-_redacted-sha/panda_replay/panda",
       "panda_core_status": {
         "claude": {
           "status": "success",
@@ -66,9 +66,9 @@
       "recorded_at": "2026-05-27T02:35:23.827975+00:00",
       "workspace_preparation": {
         "workspace_isolated": true,
-        "workspace_metadata_path": "/private/tmp/panda-eval/20260526-contract-first-v2/tasks/instance_future-architect__vuls-_redacted-sha/workspace_metadata.json"
+        "workspace_metadata_path": "<panda-eval-root>/20260526-contract-first-v2/tasks/instance_future-architect__vuls-_redacted-sha/workspace_metadata.json"
       },
-      "panda_output_dir": "/private/tmp/panda-eval/20260526-contract-first-v2/tasks/instance_future-architect__vuls-_redacted-sha/panda_replay/panda",
+      "panda_output_dir": "<panda-eval-root>/20260526-contract-first-v2/tasks/instance_future-architect__vuls-_redacted-sha/panda_replay/panda",
       "panda_core_status": {
         "claude": {
           "status": "success",
@@ -111,9 +111,9 @@
       "recorded_at": "2026-05-27T02:47:20.204494+00:00",
       "workspace_preparation": {
         "workspace_isolated": true,
-        "workspace_metadata_path": "/private/tmp/panda-eval/20260526-contract-first-v2/tasks/instance_flipt-io__flipt-_redacted-sha-d703d0fd7a/workspace_metadata.json"
+        "workspace_metadata_path": "<panda-eval-root>/20260526-contract-first-v2/tasks/instance_flipt-io__flipt-_redacted-sha-d703d0fd7a/workspace_metadata.json"
       },
-      "panda_output_dir": "/private/tmp/panda-eval/20260526-contract-first-v2/tasks/instance_flipt-io__flipt-_redacted-sha-d703d0fd7a/panda_replay/panda",
+      "panda_output_dir": "<panda-eval-root>/20260526-contract-first-v2/tasks/instance_flipt-io__flipt-_redacted-sha-d703d0fd7a/panda_replay/panda",
       "panda_core_status": {
         "claude": {
           "status": "success",
@@ -156,9 +156,9 @@
       "recorded_at": "2026-05-27T02:52:15.762298+00:00",
       "workspace_preparation": {
         "workspace_isolated": true,
-        "workspace_metadata_path": "/private/tmp/panda-eval/20260526-contract-first-v2/tasks/instance_navidrome__navidrome-_redacted-sha-58b8acc792/workspace_metadata.json"
+        "workspace_metadata_path": "<panda-eval-root>/20260526-contract-first-v2/tasks/instance_navidrome__navidrome-_redacted-sha-58b8acc792/workspace_metadata.json"
       },
-      "panda_output_dir": "/private/tmp/panda-eval/20260526-contract-first-v2/tasks/instance_navidrome__navidrome-_redacted-sha-58b8acc792/panda_replay/panda",
+      "panda_output_dir": "<panda-eval-root>/20260526-contract-first-v2/tasks/instance_navidrome__navidrome-_redacted-sha-58b8acc792/panda_replay/panda",
       "panda_core_status": {
         "claude": {
           "status": "success",
@@ -201,9 +201,9 @@
       "recorded_at": "2026-05-27T02:52:17.216582+00:00",
       "workspace_preparation": {
         "workspace_isolated": true,
-        "workspace_metadata_path": "/private/tmp/panda-eval/20260526-contract-first-v2/tasks/instance_flipt-io__flipt-_redacted-sha/workspace_metadata.json"
+        "workspace_metadata_path": "<panda-eval-root>/20260526-contract-first-v2/tasks/instance_flipt-io__flipt-_redacted-sha/workspace_metadata.json"
       },
-      "panda_output_dir": "/private/tmp/panda-eval/20260526-contract-first-v2/tasks/instance_flipt-io__flipt-_redacted-sha/panda_replay/panda",
+      "panda_output_dir": "<panda-eval-root>/20260526-contract-first-v2/tasks/instance_flipt-io__flipt-_redacted-sha/panda_replay/panda",
       "panda_core_status": {
         "claude": {
           "status": "success",

@@ -1,0 +1,32 @@
+# Local runtime and generated artifacts
+logs/
+*.log
+*.tmp
+*.temp
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+
+# Panda evaluation workdirs and raw publish-review artifacts
+panda-eval/
+references/evaluation-results/**/*.log
+references/evaluation-results/**/*.patch

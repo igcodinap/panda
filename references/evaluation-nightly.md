@@ -5,7 +5,7 @@ Use this workflow when testing whether Panda is reliable and whether Panda explo
 ## 1. Initialize
 
 ```bash
-python3 scripts/panda_eval.py init --run-dir /private/tmp/panda-eval/$(date +%Y%m%d)-nightly
+python3 scripts/panda_eval.py init --run-dir <panda-eval-root>/$(date +%Y%m%d)-nightly
 ```
 
 This creates:
@@ -19,14 +19,14 @@ The default task list contains five pinned SWE-bench Lite instance IDs for the f
 ## 2. Reliability Canary
 
 ```bash
-python3 scripts/panda_eval.py canary --run-dir /private/tmp/panda-eval/$(date +%Y%m%d)-nightly
+python3 scripts/panda_eval.py canary --run-dir <panda-eval-root>/$(date +%Y%m%d)-nightly
 ```
 
 For a local dry rehearsal that avoids real Claude/OpenCode calls:
 
 ```bash
 python3 scripts/panda_eval.py canary \
-  --run-dir /private/tmp/panda-eval/$(date +%Y%m%d)-nightly \
+  --run-dir <panda-eval-root>/$(date +%Y%m%d)-nightly \
   --skip-real-panda
 ```
 
@@ -53,7 +53,7 @@ python3 scripts/consult_ai_team.py \
   --mode explore \
   --profile fast \
   --timeout 420 \
-  --output-dir /private/tmp/panda-eval/YYYYMMDD-nightly/tasks/TASK_ID/panda_explore/panda \
+  --output-dir <panda-eval-root>/YYYYMMDD-nightly/tasks/TASK_ID/panda_explore/panda \
   --prompt "SWE-bench task TASK_ID. Inspect the clean checkout, identify likely fix areas, risks, and verification plan. Do not edit files."
 ```
 
@@ -65,7 +65,7 @@ After each variant:
 
 ```bash
 python3 scripts/panda_eval.py record \
-  --run-dir /private/tmp/panda-eval/YYYYMMDD-nightly \
+  --run-dir <panda-eval-root>/YYYYMMDD-nightly \
   --task-id TASK_ID \
   --variant codex_alone \
   --tests-passed true \
@@ -79,13 +79,13 @@ For Panda:
 
 ```bash
 python3 scripts/panda_eval.py record \
-  --run-dir /private/tmp/panda-eval/YYYYMMDD-nightly \
+  --run-dir <panda-eval-root>/YYYYMMDD-nightly \
   --task-id TASK_ID \
   --variant panda_explore \
   --tests-passed true \
   --regression false \
   --wall-seconds 123.4 \
-  --panda-output-dir /private/tmp/panda-eval/YYYYMMDD-nightly/tasks/TASK_ID/panda_explore/panda \
+  --panda-output-dir <panda-eval-root>/YYYYMMDD-nightly/tasks/TASK_ID/panda_explore/panda \
   --evidence-used
 ```
 
@@ -97,7 +97,7 @@ Any Claude quota, budget, rate-limit, auth, billing, or usage exhaustion in the 
 ## 5. Summarize
 
 ```bash
-python3 scripts/panda_eval.py summarize --run-dir /private/tmp/panda-eval/YYYYMMDD-nightly
+python3 scripts/panda_eval.py summarize --run-dir <panda-eval-root>/YYYYMMDD-nightly
 ```
 
 This writes `summary.json` with:

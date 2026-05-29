@@ -23,6 +23,16 @@ tracking. Panda's purpose is to counterweight those weaknesses with a sustained
 strategy: independent model pressure, structured evidence, explicit uncertainty,
 bounded verification, and Codex-owned integration.
 
+The operating thesis is:
+
+```text
+Independent advisors create pressure.
+Structured artifacts preserve the pressure.
+Codex integrates.
+Tests decide.
+Metrics teach the next prompt.
+```
+
 The practical rule is:
 
 ```text
@@ -104,6 +114,9 @@ agents can exchange or collect enough information, but still fail to synthesize
 distributed state correctly. Panda V2 therefore does not ask advisors to merge
 state with each other. The structured artifacts preserve their evidence, and
 Codex performs integration.
+
+For an annotated review of these papers and the project implications, see
+`references/research-foundations.md`.
 
 References:
 
@@ -252,7 +265,7 @@ identity/API contract. In Flipt ECR, Panda pushed toward credential-store and
 ECR authentication contracts, but later iterations were needed to satisfy exact
 private/public ECR behavior.
 
-The contract-first reruns produced the first strong signal that this was the
+The contract-first reruns produced a useful signal that this was the
 right direction. With better prompts, no-`.git` workspaces, and bounded
 evidence, Codex later rescued prior struggle tasks:
 
@@ -274,6 +287,11 @@ The Navidrome GLM timeout is also a useful lesson. The raw log showed GLM
 continued broad exploration until the runner terminated it. That is not a JSON
 or schema failure. It is a run-control problem: broad repositories need bounded
 exploration instructions so collaborators reserve time to synthesize.
+
+These observations should not be read as a statistically proven solve-rate
+lift. They are experience-based evidence that Panda can improve review quality,
+contract pressure, and Codex's debugging path on some hard tasks. Solve-rate
+lift remains an active evaluation question.
 
 Benchmark-methodology references:
 
