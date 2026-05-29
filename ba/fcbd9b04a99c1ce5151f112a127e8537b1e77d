@@ -1,0 +1,54 @@
+tests/test_consult_ai_team.py
+  s_01cd10bc393510::t_3d418d88550092 245-246
+  s_01cd10bc393510::t_27280da90c7ec6 286-295,361
+  s_01cd10bc393510::t_4529182cb1eba7 157-158,237-244,247-283,285,296-306
+  s_01cd10bc393510::t_8258bb74f5d7cd 470-524
+  s_01cd10bc393510::t_7d701f93d50811 284
+  s_01cd10bc393510::t_305195cccedfac 677-700
+scripts/panda_eval.py
+  s_01cd10bc393510::t_4f157e8b4d4969 67,2203,2222,2240
+  s_01cd10bc393510::t_ed9b926ce76fae 1544-1567,1587-1599
+tests/test_panda_eval.py
+  s_01cd10bc393510::t_5234aa5916c871 19-20,32,35-39,41,151-184
+  s_01cd10bc393510::t_b37335e6305d9a 781-824
+scripts/consult_ai_team.py
+  s_01cd10bc393510::t_6c1c441c72def0 1459-1482
+  s_01cd10bc393510::t_3a585cf4a346b3 1548-1553,2087,2117
+  s_01cd10bc393510::t_dcfe56572308a0 245-247
+  s_01cd10bc393510::t_5df75ff64e326b 1318-1319
+  s_01cd10bc393510::t_cbb25d099a6682 1314-1317,1320-1341,1348-1354,1356-1360,1364-1371
+  s_01cd10bc393510::t_603ae8f835785b 287-288,292-293,311,315,321,325,329,333,363,392-395
+  s_01cd10bc393510::t_2c820df3a26309 2,50-51,56-59,82-83,91-92,100-101,132-133,160,207,222-229
+  s_01cd10bc393510::t_8ece347e6c2402 434,1342-1347
+  s_01cd10bc393510::t_63ea14aaccb8b7 879,1380,1545,2007,2104
+  s_01cd10bc393510::t_744dedd454add1 884,939-940,943-946
+agents/openai.yaml
+  s_01cd10bc393510::t_153e723b1466f9 3-4
+README.md
+  s_01cd10bc393510::t_ef76bcc5e4a014 31-32,44-57,83-84,148-149
+references/evaluation-nightly.md
+  s_01cd10bc393510::t_173bf85bdd5080 60-62
+references/evaluation-hard-local.md
+  s_01cd10bc393510::t_aa79d21f0c5357 148
+site/src/pages/index.astro
+  s_01cd10bc393510::t_48396a3d2c7fca 214
+SKILL.md
+  s_01cd10bc393510::t_f33dd5e6ad40cc 53
+  s_01cd10bc393510::t_fda6c7b3396c75 3,10,47-48,52,65,67,71-73,112,140,195
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "bafcbd9b04a99c1ce5151f112a127e8537b1e77d",
+  "prompts": {},
+  "sessions": {
+    "s_01cd10bc393510": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e748a-8bd9-7aa0-84bb-6a5ad619fb86",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
