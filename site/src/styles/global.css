@@ -5,7 +5,7 @@
   --panel-soft: #f7f7f5;
   --ink: #111111;
   --muted: #707070;
-  --soft: #9a9a9a;
+  --soft: #747474;
   --line: #e7e7e2;
   --line-strong: #d8d8d2;
   --copy-surface: #f3f3f1;
@@ -204,9 +204,13 @@ select {
 .term {
   position: relative;
   display: inline-block;
+  padding: 0;
+  border: 0;
   border-bottom: 1px dotted currentColor;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   cursor: help;
-  outline: none;
 }
 
 .term::after {
@@ -236,9 +240,16 @@ select {
 }
 
 .term:hover::after,
-.term:focus-visible::after {
+.term:focus-visible::after,
+.term-active::after {
   opacity: 1;
   transform: translate(-50%, 0);
+}
+
+.term:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
 .hero-copy {
@@ -1018,6 +1029,10 @@ code {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
   .skill-run span {
     opacity: 1;
     transform: none;

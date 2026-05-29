@@ -129,12 +129,17 @@ const sources = [
           </h1>
           <p class="hero-kicker">
             it is a
-            <span
+            <button
               class="term"
-              tabindex="0"
+              type="button"
               data-tooltip="Multi-agent system: independent model advisors inspect one Codex task, while Codex remains the editor and integrator."
-              aria-label="MAS, multi-agent system"
-            >MAS</span>
+              aria-describedby="mas-definition"
+              aria-expanded="false"
+            >MAS</button>
+            <span id="mas-definition" class="sr-only">
+              Multi-agent system: independent model advisors inspect one Codex task, while Codex remains the editor
+              and integrator.
+            </span>
             system for leveraging Codex weak spots where it matters.
           </p>
           <p class="hero-copy">
@@ -418,8 +423,39 @@ python3 -m pip install -e .</code></pre>
               setLabel(originalLabel);
             }, 1300);
           } catch {
-            setLabel("Select");
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(target);
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+            setLabel("Selected");
+            window.setTimeout(() => {
+              setLabel(originalLabel);
+            }, 1300);
           }
+        });
+      });
+
+      document.querySelectorAll(".term").forEach((term) => {
+        term.addEventListener("click", (event) => {
+          event.stopPropagation();
+          const isActive = term.classList.toggle("term-active");
+          term.setAttribute("aria-expanded", String(isActive));
+        });
+
+        term.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") {
+            term.classList.remove("term-active");
+            term.setAttribute("aria-expanded", "false");
+            term.blur();
+          }
+        });
+      });
+
+      document.addEventListener("click", () => {
+        document.querySelectorAll(".term-active").forEach((term) => {
+          term.classList.remove("term-active");
+          term.setAttribute("aria-expanded", "false");
         });
       });
     </script>
