@@ -92,9 +92,10 @@ preferences are written as the single `profile.agents` behavior shape. Every
 successful save automatically smoke-tests the saved profile by reloading it and
 building the Panda commands it would run.
 
-If a configured optional CLI is later removed or unauthenticated, Panda fails
-that saved profile clearly instead of silently dropping the advisor. Update the
-profile with `--save-preferences`, or bypass it once with `--ignore-preferences`.
+If a configured optional CLI is later removed or unavailable on `PATH`, Panda
+fails that saved profile clearly instead of silently dropping the advisor.
+Update the profile with `--save-preferences`, or bypass it once with
+`--ignore-preferences`.
 
 For a no-cost command preview:
 

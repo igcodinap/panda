@@ -135,12 +135,12 @@ const sources = [
               data-tooltip="Multi-agent system: independent model advisors inspect one Codex task, while Codex remains the editor and integrator."
               aria-describedby="mas-definition"
               aria-expanded="false"
-            >MAS</button>
+            >multi agent system</button>
             <span id="mas-definition" class="sr-only">
               Multi-agent system: independent model advisors inspect one Codex task, while Codex remains the editor
               and integrator.
             </span>
-            system for leveraging Codex weak spots where it matters.
+            for leveraging Codex weak spots where it matters.
           </p>
           <p class="hero-copy">
             Panda runs independent model consultations around a Codex task, extracts structured contracts,
@@ -161,7 +161,7 @@ const sources = [
           <p class="hero-command-note">
             paste this in terminal, then <a href="#usage">set it up for Codex</a>
           </p>
-          <div class="codex-demo hero-codex-demo" aria-label="Codex using Panda skill automatically">
+          <div class="codex-demo hero-codex-demo" aria-label="Codex invoking Panda's configured behavior">
             <div class="codex-demo-header">
               <span>Codex</span>
               <strong>config-aware skill trigger</strong>
@@ -173,7 +173,7 @@ const sources = [
               </div>
               <div class="chat-bubble codex-bubble">
                 <span>Codex</span>
-                <p>Using Panda. No saved profile means one extra reviewer: Codex <code>gpt-5.5</code> at medium reasoning.</p>
+                <p>Using Panda. With no saved profile, Panda starts one Codex reviewer: <code>gpt-5.5</code> at medium reasoning.</p>
               </div>
               <div class="panda-config-preview" aria-label="Panda default and saved configuration">
                 <div>
@@ -181,18 +181,18 @@ const sources = [
                   <strong>codex:gpt-5.5@medium</strong>
                 </div>
                 <div>
-                  <span>saved profile</span>
-                  <strong>~/.config/panda/preferences.json</strong>
+                  <span>profile file</span>
+                  <strong>user-scoped: ~/.config/panda/preferences.json</strong>
                 </div>
                 <div>
-                  <span>update through Codex</span>
-                  <strong>"set Panda to use Kimi + GLM"</strong>
+                  <span>update via skill</span>
+                  <strong>"set Panda to use Kimi + GLM" -> --save-preferences</strong>
                 </div>
               </div>
               <div class="skill-run" aria-hidden="true">
                 <span>skill matched: panda</span>
-                <span>loading saved behavior profile</span>
-                <span>save-preferences smoke test when updated</span>
+                <span>no saved profile: Codex reviewer default</span>
+                <span>profile updates run a save-preferences smoke test</span>
                 <span>Codex integrates. Tests decide.</span>
               </div>
             </div>
@@ -225,7 +225,7 @@ const sources = [
               <div class="loop-step">
                 <span>02</span>
                 <strong>Advisors inspect</strong>
-                <p>Claude Code, GLM, Qwen, and Codex can review the same problem independently.</p>
+                <p>The Codex reviewer runs by default; configured Claude Code and OpenCode agents can add independent pressure.</p>
               </div>
               <div class="loop-step">
                 <span>03</span>
@@ -310,7 +310,7 @@ python3 -m pip install -e .</code></pre>
                 <span>Set up Codex access</span>
                 <ol>
                   <li>Open the Panda checkout in Codex or make its <code>SKILL.md</code> available as a Codex skill.</li>
-                  <li>Confirm <code>codex</code> is on PATH, or set <code>CODEX_BIN</code>.</li>
+                  <li>Confirm <code>codex</code> is on PATH and authenticated, or set <code>CODEX_BIN</code> to an authenticated Codex CLI.</li>
                   <li>Add Claude Code or OpenCode only when you want extra advisor sources.</li>
                   <li>Ask Codex: <strong>review this with Panda</strong>.</li>
                 </ol>
@@ -323,10 +323,9 @@ python3 -m pip install -e .</code></pre>
                 <li>Python 3.9+</li>
                 <li>
                   <a href="https://developers.openai.com/codex/cli" target="_blank" rel="noreferrer">Codex CLI</a>
-                  installed or <code>CODEX_BIN</code> set
+                  installed and authenticated, or <code>CODEX_BIN</code> set to an authenticated CLI
                 </li>
                 <li>Panda skill available to Codex</li>
-                <li>Codex CLI auth configured</li>
                 <li>
                   <a href="https://docs.anthropic.com/en/docs/claude-code/overview" target="_blank" rel="noreferrer">
                     Claude Code

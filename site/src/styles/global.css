@@ -667,7 +667,7 @@ select {
   background: #fff;
 }
 
-.panda-config-preview div {
+.panda-config-preview > div {
   display: grid;
   grid-template-columns: minmax(120px, 0.7fr) minmax(0, 1.3fr);
   align-items: center;
@@ -677,7 +677,7 @@ select {
   border-bottom: 1px solid var(--line);
 }
 
-.panda-config-preview div:last-child {
+.panda-config-preview > div:last-child {
   border-bottom: 0;
 }
 
@@ -1046,7 +1046,7 @@ code {
     width: 100%;
   }
 
-  .panda-config-preview div {
+  .panda-config-preview > div {
     grid-template-columns: 1fr;
     gap: 3px;
   }
