@@ -26,34 +26,35 @@ where a single local inspection is enough.
 Prerequisites:
 
 - Python 3.9 or newer.
-- `claude` on `PATH`, or set `CLAUDE_BIN`.
-- `opencode` on `PATH`, or set `OPENCODE_BIN`.
-- `codex` on `PATH`, or set `CODEX_BIN`, for the portable Codex reviewer fallback.
+- `codex` on `PATH`, or set `CODEX_BIN`, for the default portable Codex reviewer.
+- Optional: `claude` on `PATH`, or set `CLAUDE_BIN`, when using Claude Code agents.
+- Optional: `opencode` on `PATH`, or set `OPENCODE_BIN`, when using OpenCode agents.
 - Local authentication configured for the CLIs you plan to run.
 
-From the repository root:
+Codex-facing Panda use has two model-selection paths:
+
+1. **Config-driven**: run Panda without model-selection flags. Panda loads the
+   user config file, and if no config exists it runs Codex `gpt-5.5` with
+   `medium` reasoning.
+2. **One-off single model**: when the user says to run Panda only with a
+   specific model, pass exactly one `--agent name=backend:model[@effort]`.
+
+From the repository root, the config-driven/default path is:
 
 ```bash
 python3 scripts/consult_ai_team.py \
-  --tool all \
   --mode explore \
   --role implementation-review \
   --prompt "We need to implement X. Constraints: Y. What risks, alternatives, and tests should Codex consider?"
 ```
 
-If Claude Code or OpenCode is not installed, use the availability-aware Codex
-fallback:
+For a one-off single-model run:
 
 ```bash
 python3 scripts/consult_ai_team.py \
-  --tool auto \
-  --mode explore \
-  --role implementation-review \
-  --prompt "Review this plan and surface risks, alternatives, and tests."
+  --agent claude=claude:claude-opus-4-7@medium \
+  --prompt "Review this plan with Claude only."
 ```
-
-`--tool codex` runs only the Codex reviewer core. The Codex core defaults to
-`gpt-5.5` with `medium` reasoning.
 
 To remember a Panda default for future runs, save an explicit behavior profile.
 This stores the named agents Panda should spawn outside the repo; OpenCode is
@@ -67,17 +68,19 @@ python3 scripts/consult_ai_team.py \
   --save-preferences
 ```
 
-Plain Panda runs then spawn those named agents. Explicit flags still win, so
-`--tool all` or `--agent ...` overrides the saved profile for one run. Inspect
-or clear preferences with `--show-preferences` and `--reset-preferences`; bypass
-them for one invocation with `--ignore-preferences` or `PANDA_NO_PREFERENCES=1`.
-Older slot-style preference files are still loaded for compatibility, but new
-saved preferences are written as the single `profile.agents` behavior shape.
+Plain Panda runs then spawn those configured agents. A one-off single `--agent`
+run overrides the saved profile for that invocation. Inspect or clear preferences
+with `--show-preferences` and `--reset-preferences`; bypass them for one
+invocation with `--ignore-preferences` or `PANDA_NO_PREFERENCES=1`. Older
+slot-style preference files are still loaded for compatibility, but new saved
+preferences are written as the single `profile.agents` behavior shape. Every
+successful save automatically smoke-tests the saved profile by reloading it and
+building the Panda commands it would run.
 
 For a no-cost command preview:
 
 ```bash
-python3 scripts/consult_ai_team.py --dry-run --tool all --prompt "smoke test"
+python3 scripts/consult_ai_team.py --dry-run --prompt "smoke test"
 ```
 
 Packaging note: Panda is currently checkout-first. The Python package builds
@@ -99,8 +102,8 @@ to open a localhost socket in restricted environments.
 
 1. Codex gathers task context and decides whether consultation is worth the
    overhead.
-2. Panda runs Claude Code, OpenCode GLM, OpenCode Qwen, and/or the Codex
-   reviewer core as independent advisors.
+2. Panda runs the Codex reviewer by default, and can add Claude Code,
+   OpenCode GLM, OpenCode Qwen, or other named agents as independent advisors.
 3. Advisors inspect and report; they do not own the working tree.
 4. Panda writes compact evidence artifacts.
 5. Codex reads the evidence, accepts or rejects advice, edits code, and verifies

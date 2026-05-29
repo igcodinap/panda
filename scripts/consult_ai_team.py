@@ -71,6 +71,14 @@ PREFERENCE_FIELDS = (
 )
 PREFERENCE_META_FIELDS = ("schema_version", "created_at", "updated_at")
 PREFERENCE_MODEL_FIELDS = ("claude_model", "opencode_model", "qwen_model", "codex_model")
+PREFERENCE_TARGET_FIELDS = {
+    "claude_model": "claude",
+    "claude_effort": "claude",
+    "opencode_model": "opencode",
+    "qwen_model": "qwen",
+    "codex_model": "codex",
+    "codex_effort": "codex",
+}
 PREFERENCE_MAX_MODEL_CHARS = 256
 PATCH_MODE = "patch"
 PATCH_MODE_DISABLED_MESSAGE = (
@@ -179,8 +187,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tool",
         choices=TOOL_CHOICES,
-        default="all",
-        help="Collaborator core to run. 'all' runs Claude+GLM+Qwen; 'auto' runs available cores with Codex fallback.",
+        default="codex",
+        help=(
+            "Collaborator core to run. Defaults to Codex only. "
+            "'all' runs the legacy Claude+GLM+Qwen team; 'auto' runs available cores with Codex fallback."
+        ),
     )
     parser.add_argument("--mode", default="explore", metavar="{advisory,explore}")
     parser.add_argument(
@@ -299,6 +310,8 @@ def parse_args() -> argparse.Namespace:
     )
     if preference_command_count > 1:
         parser.error("Use only one of --save-preferences, --show-preferences, or --reset-preferences.")
+    if len(args.agent) > 1 and not args.save_preferences:
+        parser.error("Use one --agent for one-off Panda runs; use --save-preferences to store a multi-agent behavior profile.")
     if args.agent and "tool" in explicit_flags:
         parser.error("Use either --agent or --tool, not both.")
     validate_choice(parser, "AI_TEAM_EXECUTION/--execution", args.execution, EXECUTION_CHOICES)
@@ -560,6 +573,40 @@ def configured_agents_for_preferences(args: argparse.Namespace) -> list[dict]:
     return agents
 
 
+def selected_preference_targets(args: argparse.Namespace) -> set[str]:
+    configured_agents = getattr(args, "configured_agents", [])
+    if configured_agents:
+        targets = {agent["name"] for agent in configured_agents}
+        targets.update(agent["backend"] for agent in configured_agents)
+        return targets
+    return set(requested_tools(args.tool, args))
+
+
+def validate_save_preference_targets(args: argparse.Namespace, explicit_fields: list[str]) -> None:
+    explicit_target_fields = [
+        field
+        for field in explicit_fields
+        if field in PREFERENCE_TARGET_FIELDS
+    ]
+    if not explicit_target_fields:
+        return
+    selected_targets = selected_preference_targets(args)
+    ignored_fields = [
+        field
+        for field in explicit_target_fields
+        if PREFERENCE_TARGET_FIELDS[field] not in selected_targets
+    ]
+    if not ignored_fields:
+        return
+    ignored_flags = ", ".join(f"--{field.replace('_', '-')}" for field in ignored_fields)
+    selected_text = ", ".join(sorted(selected_targets)) or "none"
+    raise SystemExit(
+        f"--save-preferences received {ignored_flags}, but the current behavior selects "
+        f"{selected_text}. Add a matching --tool/--agent selection, or encode the model directly "
+        "with --agent NAME=BACKEND:MODEL."
+    )
+
+
 def validate_preferences_payload(payload: object, path: Path) -> tuple[dict, list[str]]:
     if not isinstance(payload, dict):
         raise SystemExit(f"Preferences file must contain a JSON object: {path}")
@@ -728,6 +775,49 @@ def write_preferences_json(path: Path, data: dict) -> None:
             tmp_path.unlink()
 
 
+def smoke_preferences_payload(args: argparse.Namespace, preferences: dict) -> dict:
+    agents = profile_agents_from_preferences(preferences)
+    if not agents:
+        raise SystemExit("Saved Panda preferences smoke test failed: profile.agents is missing.")
+
+    smoke_args = argparse.Namespace(**vars(args))
+    smoke_args.configured_agents = [dict(agent) for agent in agents]
+    smoke_args.tool = "codex"
+    smoke_args.dry_run = True
+    smoke_args.session = None
+    smoke_args.output_dir = None
+    smoke_args.prompt = None
+    smoke_args.prompt_file = None
+    smoke_args.preference_sourced_fields = {"agents"}
+    smoke_args.preferences_metadata = {
+        "enabled": True,
+        "path": str(default_preferences_path()),
+        "schema_version": preferences["schema_version"],
+        "loaded": True,
+        "applied_fields": ["profile.agents"],
+        "ignored_fields": {},
+        "warnings": [],
+    }
+    smoke_args.profile_resolution = resolve_profile(smoke_args)
+    validate_preference_tool_availability(smoke_args)
+    prompt = consultation_prompt(
+        smoke_args.mode,
+        smoke_args.role,
+        smoke_args.approval_mode,
+        "Panda saved-preferences smoke test.",
+        smoke_args.protocol,
+    )
+    commands, _ = build_commands(smoke_args, prompt, smoke_args.workspace.resolve())
+    if not commands:
+        raise SystemExit("Saved Panda preferences smoke test failed: no commands were built.")
+    return {
+        "requested_tools": requested_tools(smoke_args.tool, smoke_args),
+        "active_models": active_models(smoke_args),
+        "applied_effort": dict(get_profile_resolution(smoke_args)["applied_effort"]),
+        "commands": list(commands),
+    }
+
+
 def save_preferences(args: argparse.Namespace) -> int:
     explicit_fields = [
         field
@@ -741,6 +831,7 @@ def save_preferences(args: argparse.Namespace) -> int:
             "--agent, --tool, --profile, --claude-model, --claude-effort, "
             "--opencode-model, --qwen-model, --codex-model, or --codex-effort."
         )
+    validate_save_preference_targets(args, explicit_fields)
 
     path = default_preferences_path()
     existing: dict = {}
@@ -771,9 +862,16 @@ def save_preferences(args: argparse.Namespace) -> int:
     validated, warnings = validate_preferences_payload(payload, path)
     for warning in warnings:
         print(f"warning: {warning}", file=sys.stderr)
+    smoke_preferences_payload(args, validated)
     write_preferences_json(path, validated)
+    roundtrip_preferences, roundtrip_warnings = read_preferences(path)
+    for warning in roundtrip_warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+    smoke_summary = smoke_preferences_payload(args, roundtrip_preferences or validated)
     print(f"Saved Panda preferences to {path}")
     print(json.dumps(validated, indent=2))
+    print("Panda preferences smoke test passed:")
+    print(json.dumps(smoke_summary, indent=2))
     return 0
 
 

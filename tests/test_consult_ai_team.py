@@ -92,11 +92,11 @@ class ArgumentValidationTests(unittest.TestCase):
         args = self.parse_with(["--session", "--prompt", "test"])
         self.assertEqual(args.session, "")
 
-    def test_default_tool_runs_all_cores(self) -> None:
+    def test_default_tool_runs_codex_core(self) -> None:
         args = self.parse_with(["--prompt", "test"])
-        self.assertEqual(args.tool, "all")
+        self.assertEqual(args.tool, "codex")
         self.assertEqual(args.protocol, "v2")
-        self.assertEqual(consult_ai_team.requested_tools(args.tool), ["claude", "opencode", "qwen"])
+        self.assertEqual(consult_ai_team.requested_tools(args.tool), ["codex"])
 
     def test_invalid_protocol_is_rejected(self) -> None:
         with self.assertRaises(SystemExit):
@@ -105,6 +105,17 @@ class ArgumentValidationTests(unittest.TestCase):
     def test_invalid_profile_is_rejected(self) -> None:
         with self.assertRaises(SystemExit):
             self.parse_with(["--profile", "huge", "--prompt", "test"])
+
+    def test_one_off_agent_override_accepts_only_one_agent(self) -> None:
+        with self.assertRaises(SystemExit):
+            self.parse_with([
+                "--agent",
+                "kimi=opencode:opencode-go/kimi-k2.6",
+                "--agent",
+                "glm=opencode:opencode-go/glm-5.1",
+                "--prompt",
+                "test",
+            ])
 
     def test_invalid_claude_effort_is_rejected(self) -> None:
         with self.assertRaises(SystemExit):
@@ -324,6 +335,7 @@ class ProfileResolutionTests(unittest.TestCase):
         with patch.object(consult_ai_team, "claude_supports_effort", return_value=False):
             commands, _ = consult_ai_team.build_commands(args, "prompt", Path("/tmp"))
 
+        self.assertEqual(consult_ai_team.requested_tools(args.tool, args), ["claude", "opencode", "qwen"])
         self.assertEqual(list(commands), ["claude", "opencode", "qwen"])
 
     def test_legacy_both_tool_is_rejected(self) -> None:
@@ -387,13 +399,14 @@ class PreferenceTests(unittest.TestCase):
                 self.assertEqual(fallback.name, "preferences.json")
                 self.assertEqual(fallback.parent.name, "panda")
 
-    def test_missing_preference_file_preserves_defaults(self) -> None:
+    def test_missing_preference_file_uses_codex_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             pref_path = Path(tmpdir) / "missing.json"
 
             args = self.parse_with(["--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
 
-            self.assertEqual(args.tool, "all")
+            self.assertEqual(args.tool, "codex")
+            self.assertEqual(consult_ai_team.requested_tools(args.tool, args), ["codex"])
             self.assertFalse(args.preferences_metadata["loaded"])
             self.assertEqual(args.preferences_metadata["applied_fields"], [])
 
@@ -616,14 +629,14 @@ class PreferenceTests(unittest.TestCase):
                 ["--ignore-preferences", "--prompt", "test"],
                 {"PANDA_PREFERENCES_FILE": str(pref_path)},
             )
-            self.assertEqual(args.tool, "all")
+            self.assertEqual(args.tool, "codex")
             self.assertFalse(args.preferences_metadata["enabled"])
 
             args = self.parse_with(
                 ["--prompt", "test"],
                 {"PANDA_PREFERENCES_FILE": str(pref_path), "PANDA_NO_PREFERENCES": "1"},
             )
-            self.assertEqual(args.tool, "all")
+            self.assertEqual(args.tool, "codex")
             self.assertFalse(args.preferences_metadata["enabled"])
 
     def test_malformed_preferences_fail_unless_ignored(self) -> None:
@@ -638,7 +651,7 @@ class PreferenceTests(unittest.TestCase):
                 ["--ignore-preferences", "--prompt", "test"],
                 {"PANDA_PREFERENCES_FILE": str(pref_path)},
             )
-            self.assertEqual(args.tool, "all")
+            self.assertEqual(args.tool, "codex")
 
     def test_invalid_preferences_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -670,8 +683,11 @@ class PreferenceTests(unittest.TestCase):
                 "--save-preferences",
             ]):
                 with patch.dict(os.environ, env, clear=True):
-                    with redirect_stdout(io.StringIO()):
-                        self.assertEqual(consult_ai_team.main(), 0)
+                    stdout = io.StringIO()
+                    with patch.object(consult_ai_team.shutil, "which", return_value="/usr/bin/opencode"):
+                        with redirect_stdout(stdout):
+                            self.assertEqual(consult_ai_team.main(), 0)
+            self.assertIn("Panda preferences smoke test passed", stdout.getvalue())
 
             saved = json.loads(pref_path.read_text(encoding="utf-8"))
             self.assertEqual(
@@ -714,6 +730,24 @@ class PreferenceTests(unittest.TestCase):
 
             self.assertFalse(pref_path.exists())
 
+    def test_save_preferences_smoke_rejects_unavailable_backend_before_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            env = {"PANDA_PREFERENCES_FILE": str(pref_path)}
+
+            with patch.object(sys, "argv", [
+                "consult_ai_team.py",
+                "--agent",
+                "claude=claude:claude-opus-4-7@medium",
+                "--save-preferences",
+            ]):
+                with patch.dict(os.environ, env, clear=True):
+                    with patch.object(consult_ai_team.shutil, "which", return_value=None):
+                        with self.assertRaisesRegex(SystemExit, "requested agent 'claude' using claude"):
+                            consult_ai_team.main()
+
+            self.assertFalse(pref_path.exists())
+
     def test_saved_behavior_profile_round_trips_into_configured_agents(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             pref_path = Path(tmpdir) / "prefs.json"
@@ -728,8 +762,10 @@ class PreferenceTests(unittest.TestCase):
                 "--save-preferences",
             ]):
                 with patch.dict(os.environ, env, clear=True):
-                    with redirect_stdout(io.StringIO()):
-                        self.assertEqual(consult_ai_team.main(), 0)
+                    with patch.object(consult_ai_team.shutil, "which", return_value="/usr/bin/tool"):
+                        with patch.object(consult_ai_team, "claude_supports_effort", return_value=True):
+                            with redirect_stdout(io.StringIO()):
+                                self.assertEqual(consult_ai_team.main(), 0)
 
             with patch.object(consult_ai_team.shutil, "which", return_value="/usr/bin/tool"):
                 args = self.parse_with(["--prompt", "test"], env)
@@ -748,13 +784,15 @@ class PreferenceTests(unittest.TestCase):
             )
             self.assertEqual(consult_ai_team.requested_tools(args.tool, args), ["kimi", "claude"])
 
-    def test_save_model_flags_writes_single_behavior_profile(self) -> None:
+    def test_save_model_flags_with_tool_all_writes_single_behavior_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             pref_path = Path(tmpdir) / "prefs.json"
             env = {"PANDA_PREFERENCES_FILE": str(pref_path)}
 
             with patch.object(sys, "argv", [
                 "consult_ai_team.py",
+                "--tool",
+                "all",
                 "--profile",
                 "fast",
                 "--opencode-model",
@@ -764,8 +802,10 @@ class PreferenceTests(unittest.TestCase):
                 "--save-preferences",
             ]):
                 with patch.dict(os.environ, env, clear=True):
-                    with redirect_stdout(io.StringIO()):
-                        self.assertEqual(consult_ai_team.main(), 0)
+                    with patch.object(consult_ai_team.shutil, "which", return_value="/usr/bin/tool"):
+                        with patch.object(consult_ai_team, "claude_supports_effort", return_value=False):
+                            with redirect_stdout(io.StringIO()):
+                                self.assertEqual(consult_ai_team.main(), 0)
 
             saved = json.loads(pref_path.read_text(encoding="utf-8"))
             self.assertNotIn("opencode_model", saved)
@@ -824,6 +864,23 @@ class PreferenceTests(unittest.TestCase):
                 ],
             )
 
+    def test_save_model_flags_without_matching_tool_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_path = Path(tmpdir) / "prefs.json"
+            env = {"PANDA_PREFERENCES_FILE": str(pref_path)}
+
+            with patch.object(sys, "argv", [
+                "consult_ai_team.py",
+                "--opencode-model",
+                "provider/kimi-2.6",
+                "--save-preferences",
+            ]):
+                with patch.dict(os.environ, env, clear=True):
+                    with self.assertRaisesRegex(SystemExit, "current behavior selects codex"):
+                        consult_ai_team.main()
+
+            self.assertFalse(pref_path.exists())
+
     def test_save_agent_effort_writes_intensity_into_behavior_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             pref_path = Path(tmpdir) / "prefs.json"
@@ -838,8 +895,9 @@ class PreferenceTests(unittest.TestCase):
                 "--save-preferences",
             ]):
                 with patch.dict(os.environ, env, clear=True):
-                    with redirect_stdout(io.StringIO()):
-                        self.assertEqual(consult_ai_team.main(), 0)
+                    with patch.object(consult_ai_team.shutil, "which", return_value="/usr/bin/codex"):
+                        with redirect_stdout(io.StringIO()):
+                            self.assertEqual(consult_ai_team.main(), 0)
 
             saved = json.loads(pref_path.read_text(encoding="utf-8"))
             self.assertEqual(
@@ -911,6 +969,28 @@ class ManifestTests(unittest.TestCase):
             with patch.dict(os.environ, {"PANDA_NO_PREFERENCES": "1"}, clear=True):
                 with redirect_stderr(io.StringIO()):
                     return consult_ai_team.parse_args()
+
+    def test_default_one_shot_manifest_uses_codex_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            args = self.parse_with([
+                "--dry-run",
+                "--output-dir",
+                tmpdir,
+                "--prompt",
+                "test",
+            ])
+            prompt = consult_ai_team.consultation_prompt(args.mode, args.role, args.approval_mode, "test")
+
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_one_shot(args, prompt)
+
+            manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["tool"], "codex")
+            self.assertEqual(manifest["requested_tools"], ["codex"])
+            self.assertEqual(manifest["active_models"], {"codex": consult_ai_team.DEFAULT_CODEX_MODEL})
+            self.assertEqual(manifest["applied_effort"]["codex"], consult_ai_team.DEFAULT_CODEX_EFFORT)
+            self.assertEqual([tool["tool"] for tool in manifest["tools"]], ["codex"])
 
     def test_one_shot_manifest_includes_profile_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1551,7 +1631,7 @@ class SessionTests(unittest.TestCase):
             with redirect_stdout(io.StringIO()):
                 consult_ai_team.run_session(args, "first")
 
-            session_dir = next(Path(tmpdir).iterdir())
+            session_dir = next(path for path in Path(tmpdir).iterdir() if path.is_dir())
             session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
             args = self.parse_with([
                 "--session",
@@ -1592,7 +1672,7 @@ class SessionTests(unittest.TestCase):
             with redirect_stdout(io.StringIO()):
                 consult_ai_team.run_session(args, "first")
 
-            session_dir = next(Path(tmpdir).iterdir())
+            session_dir = next(path for path in Path(tmpdir).iterdir() if path.is_dir())
             manifest = json.loads((session_dir / "turns" / "001" / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["execution"], "sequential")
             self.assertEqual([tool["tool"] for tool in manifest["tools"]], ["claude", "opencode", "qwen"])
@@ -1614,7 +1694,7 @@ class SessionTests(unittest.TestCase):
             with redirect_stdout(io.StringIO()):
                 consult_ai_team.run_session(args, "first")
 
-            session_dir = next(Path(tmpdir).iterdir())
+            session_dir = next(path for path in Path(tmpdir).iterdir() if path.is_dir())
             session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
             args = self.parse_with([
                 "--session",
@@ -1673,22 +1753,36 @@ class SessionTests(unittest.TestCase):
 
     def test_session_continuation_inherits_configured_agents(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            args = self.parse_with([
+            pref_path = Path(tmpdir) / "prefs.json"
+            pref_path.write_text(
+                json.dumps({
+                    "schema_version": consult_ai_team.PREFERENCES_SCHEMA_VERSION,
+                    "profile": {
+                        "agents": [
+                            {"name": "kimi", "backend": "opencode", "model": "opencode-go/kimi-k2.6"},
+                            {"name": "glm", "backend": "opencode", "model": "opencode-go/glm-5.1"},
+                        ]
+                    },
+                }),
+                encoding="utf-8",
+            )
+            with patch.object(sys, "argv", [
+                "consult_ai_team.py",
                 "--session",
                 "--session-dir",
                 tmpdir,
-                "--agent",
-                "kimi=opencode:opencode-go/kimi-k2.6",
-                "--agent",
-                "glm=opencode:opencode-go/glm-5.1",
                 "--dry-run",
                 "--prompt",
                 "first",
-            ])
+            ]):
+                with patch.dict(os.environ, {"PANDA_PREFERENCES_FILE": str(pref_path)}, clear=True):
+                    with patch.object(consult_ai_team.shutil, "which", return_value="/usr/bin/opencode"):
+                        with redirect_stderr(io.StringIO()):
+                            args = consult_ai_team.parse_args()
             with redirect_stdout(io.StringIO()):
                 consult_ai_team.run_session(args, "first")
 
-            session_dir = next(Path(tmpdir).iterdir())
+            session_dir = next(path for path in Path(tmpdir).iterdir() if path.is_dir())
             session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
             args = self.parse_with([
                 "--session",
