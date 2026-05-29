@@ -139,7 +139,7 @@ select {
   display: flex;
   align-items: center;
   flex-direction: column;
-  padding: 112px 0 46px;
+  padding: 58px 0 34px;
   text-align: center;
 }
 
@@ -149,7 +149,7 @@ select {
   height: 124px;
   place-items: center;
   overflow: hidden;
-  margin-bottom: 26px;
+  margin-bottom: 18px;
 }
 
 .hero-logo img {
@@ -161,7 +161,7 @@ select {
 }
 
 .eyebrow {
-  margin: 0 0 26px;
+  margin: 0 0 18px;
   color: var(--muted);
   font-size: 0.98rem;
   font-weight: 480;
@@ -297,7 +297,7 @@ select {
 }
 
 .hero-command-note {
-  margin: 22px 0 0;
+  margin: 16px 0 0;
   color: var(--muted);
   font-size: 0.92rem;
 }
@@ -321,11 +321,25 @@ select {
   font-size: 0.86rem;
 }
 
-.thesis-strip p {
-  margin: 0;
+.thesis-copy {
   padding: 20px 0;
+}
+
+.thesis-copy strong {
+  display: block;
+  margin-bottom: 6px;
   color: var(--ink);
-  font-size: 1.05rem;
+  font-family: var(--font-display);
+  font-size: 1.38rem;
+  font-weight: 700;
+  line-height: 1.18;
+}
+
+.thesis-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 1.02rem;
+  line-height: 1.5;
 }
 
 .band {
@@ -437,7 +451,7 @@ select {
 
 .hero-codex-demo {
   width: min(620px, 100%);
-  margin-top: 46px;
+  margin-top: 34px;
   text-align: left;
 }
 
@@ -644,7 +658,7 @@ select {
 .panda-config-preview {
   display: grid;
   margin-top: 2px;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: #fff;
@@ -679,6 +693,22 @@ select {
   font-size: 0.79rem;
   font-weight: 560;
   line-height: 1.35;
+}
+
+.panda-config-preview .config-term {
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  text-align: left;
+}
+
+.panda-config-preview .config-term::after {
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 560;
+  white-space: normal;
 }
 
 .skill-run {
@@ -1027,13 +1057,13 @@ code {
   }
 
   .hero {
-    padding: 72px 0 42px;
+    padding: 42px 0 34px;
   }
 
   .hero-logo {
     width: 112px;
     height: 104px;
-    margin-bottom: 18px;
+    margin-bottom: 14px;
   }
 
   .hero-logo img {
@@ -1042,7 +1072,7 @@ code {
   }
 
   .eyebrow {
-    margin-bottom: 32px;
+    margin-bottom: 18px;
   }
 
   .hero h1 {

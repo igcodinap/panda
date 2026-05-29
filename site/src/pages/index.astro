@@ -165,12 +165,23 @@ const sources = [
               </div>
               <div class="chat-bubble codex-bubble">
                 <span>Codex</span>
-                <p>Using Panda. With no saved profile, Panda starts one Codex reviewer: <code>gpt-5.5</code> at medium reasoning.</p>
+                <p>Using Panda to analyze the research and plan.</p>
               </div>
               <div class="panda-config-preview" aria-label="Panda default and saved configuration">
                 <div>
                   <span>default agent</span>
-                  <strong>codex:gpt-5.5@medium</strong>
+                  <strong>
+                    <button
+                      class="term config-term"
+                      type="button"
+                      data-tooltip="With no saved profile, Panda starts one Codex reviewer: gpt-5.5 at medium reasoning."
+                      aria-describedby="default-agent-note"
+                      aria-expanded="false"
+                    >codex:gpt-5.5@medium</button>
+                    <span id="default-agent-note" class="sr-only">
+                      With no saved profile, Panda starts one Codex reviewer: gpt-5.5 at medium reasoning.
+                    </span>
+                  </strong>
                 </div>
                 <div>
                   <span>profile file</span>
@@ -193,10 +204,13 @@ const sources = [
 
         <section class="thesis-strip" aria-label="Operating thesis">
           <span>Operating thesis</span>
-          <p>
-            Independent advisors create pressure. Structured artifacts preserve it. Codex integrates. Tests
-            decide. Metrics teach the next prompt.
-          </p>
+          <div class="thesis-copy">
+            <strong>Panda turns reported model weaknesses into focused review pressure.</strong>
+            <p>
+              Independent advisors inspect the brittle parts. Structured artifacts preserve what they find.
+              Codex integrates. Tests decide. Metrics teach the next prompt.
+            </p>
+          </div>
         </section>
 
         <section class="band" id="workflow">
