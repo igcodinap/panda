@@ -40,6 +40,15 @@ Claude Code and OpenCode are not required for the base install. They add more
 independent review pressure when configured, but the default no-config path is
 intentionally Codex-only so a fresh checkout can still use Panda.
 
+ROI recommendation: once Panda becomes part of regular Codex work, the first
+optional paid add-on we recommend is OpenCode Go alongside Codex. As of
+May 29, 2026, OpenCode lists Go at $5 for the first month and then $10/month,
+with usage limits expressed as dollar value and access to open coding models
+such as Kimi, GLM, Qwen, DeepSeek, MiniMax, and MiMo. That gives Panda a
+separate low-cost advisor budget while Codex stays focused on editing,
+integration, and final verification. Verify current pricing and limits at
+https://opencode.ai/go and https://dev.opencode.ai/docs/go/.
+
 Codex-facing Panda use has two model-selection paths:
 
 1. **Config-driven**: run Panda without model-selection flags. Panda loads the

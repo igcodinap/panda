@@ -96,25 +96,13 @@ select {
   display: inline-flex;
   align-items: center;
   min-width: max-content;
-  gap: 10px;
+  color: var(--ink);
   font-family: var(--font-display);
   font-weight: 700;
 }
 
-.brand-mark {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  overflow: hidden;
-}
-
-.brand-mark img {
-  display: block;
-  width: 33px;
-  height: 30px;
-  object-fit: contain;
-  mix-blend-mode: multiply;
+.brand:hover {
+  color: var(--ink);
 }
 
 .brand-word {
@@ -260,37 +248,6 @@ select {
   overflow-wrap: anywhere;
 }
 
-.hero-command {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 42px;
-  align-items: center;
-  width: min(650px, 100%);
-  max-width: 100%;
-  min-width: 0;
-  min-height: 46px;
-  margin-top: 28px;
-  overflow: hidden;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: var(--copy-surface);
-  text-align: left;
-}
-
-.hero-command pre {
-  max-height: none;
-  padding: 12px 0 12px 18px;
-  color: #111;
-  font-size: 0.88rem;
-  line-height: 1.4;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.hero-command code {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 .button,
 .ghost-button,
 .copy-button {
@@ -339,55 +296,8 @@ select {
   color: var(--ink);
 }
 
-.hero-command .copy-button {
-  justify-self: center;
-  width: 30px;
-  min-width: 30px;
-  height: 30px;
-  min-height: 30px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #6c6c6c;
-}
-
-.hero-command .copy-button:hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.copy-icon {
-  position: relative;
-  display: block;
-  width: 15px;
-  height: 15px;
-}
-
-.copy-icon::before,
-.copy-icon::after {
-  position: absolute;
-  border: 1.5px solid currentColor;
-  border-radius: 3px;
-  content: "";
-}
-
-.copy-icon::before {
-  top: 4px;
-  left: 2px;
-  width: 9px;
-  height: 9px;
-  background: transparent;
-}
-
-.copy-icon::after {
-  top: 1px;
-  left: 5px;
-  width: 9px;
-  height: 9px;
-  background: var(--copy-surface);
-}
-
 .hero-command-note {
-  margin: 10px 0 0;
+  margin: 22px 0 0;
   color: var(--muted);
   font-size: 0.92rem;
 }
@@ -471,12 +381,14 @@ select {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.usage-primary {
+  grid-template-columns: 1fr;
+}
+
 .loop-step,
 .pill,
 .source-card,
-.code-panel,
 .codex-demo,
-.setup-card,
 .status-panel {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -513,67 +425,6 @@ select {
   color: var(--muted);
 }
 
-.code-panel {
-  overflow: hidden;
-  border-color: var(--line-strong);
-  border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 14px 38px rgba(17, 17, 17, 0.04);
-}
-
-.code-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 44px;
-  padding: 0 12px 0 76px;
-  position: relative;
-  border-bottom: 1px solid var(--line);
-  color: var(--soft);
-  gap: 12px;
-}
-
-.code-panel-header::before {
-  position: absolute;
-  top: 50%;
-  left: 16px;
-  width: 11px;
-  height: 11px;
-  border-radius: 999px;
-  background: #ff5f57;
-  box-shadow:
-    18px 0 0 #ffbd2e,
-    36px 0 0 #28c840;
-  content: "";
-  transform: translateY(-50%);
-}
-
-.code-panel-header span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-size: 0.86rem;
-}
-
-.code-panel .copy-button {
-  flex: 0 0 auto;
-  min-height: 30px;
-  border-color: transparent;
-  background: var(--copy-surface);
-  color: var(--ink);
-  font-size: 0.83rem;
-}
-
-.code-panel pre {
-  padding: 18px 20px 22px;
-  color: var(--code-text);
-  background: #fff;
-  white-space: pre-wrap;
-}
-
-.code-panel code {
-  white-space: pre-wrap;
-}
-
 .codex-demo {
   display: grid;
   min-height: 100%;
@@ -590,6 +441,15 @@ select {
   text-align: left;
 }
 
+.install-codex-demo {
+  min-height: auto;
+}
+
+.mac-window {
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(17, 17, 17, 0.08);
+}
+
 .codex-demo-header {
   display: flex;
   align-items: center;
@@ -602,9 +462,25 @@ select {
 }
 
 .codex-demo-header span {
+  display: inline-flex;
+  align-items: center;
+  gap: 54px;
   font-family: var(--font-display);
   color: var(--ink);
   font-weight: 700;
+}
+
+.window-controls {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: #ff5f57;
+  box-shadow:
+    18px 0 0 #ffbd2e,
+    36px 0 0 #28c840;
 }
 
 .codex-demo-header strong {
@@ -623,12 +499,119 @@ select {
   width: min(88%, 440px);
 }
 
+.install-prompt-bubble {
+  width: min(94%, 500px);
+}
+
+.chat-bubble-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+  gap: 12px;
+}
+
 .chat-bubble span {
   display: block;
   margin-bottom: 5px;
   color: var(--soft);
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.chat-bubble-top span {
+  margin-bottom: 0;
+}
+
+.chat-copy-button {
+  position: relative;
+  min-height: 40px;
+  overflow: visible;
+  padding: 0 16px;
+  border-color: rgba(17, 17, 17, 0.1);
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.86rem;
+  box-shadow: 0 6px 16px rgba(17, 17, 17, 0.06);
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.user-bubble .chat-copy-button {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.chat-copy-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px rgba(17, 17, 17, 0.1);
+}
+
+.chat-copy-button [data-copy-label] {
+  display: inline;
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: 750;
+}
+
+.chat-copy-button::before,
+.chat-copy-button::after {
+  position: absolute;
+  pointer-events: none;
+  content: "";
+  opacity: 0;
+}
+
+.chat-copy-button::before {
+  inset: -7px;
+  border: 2px solid rgba(17, 17, 17, 0.16);
+  border-radius: 12px;
+  transform: scale(0.82);
+}
+
+.chat-copy-button::after {
+  top: 50%;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%) scale(0.2);
+}
+
+.chat-copy-button.copy-celebrate {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+  box-shadow: 0 16px 34px rgba(17, 17, 17, 0.18);
+  animation: copy-pop 660ms cubic-bezier(0.2, 1.45, 0.35, 1);
+}
+
+.chat-copy-button.copy-celebrate::before {
+  animation: copy-ring 920ms ease-out forwards;
+}
+
+.chat-copy-button.copy-celebrate::after {
+  animation: copy-confetti 980ms ease-out forwards;
+}
+
+.copy-spark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.2);
+}
+
+.chat-copy-button.copy-celebrate .copy-spark {
+  animation: copy-spark 1040ms ease-out forwards;
 }
 
 .chat-bubble p {
@@ -729,49 +712,6 @@ select {
   animation-delay: 3.6s;
 }
 
-.setup-card {
-  padding: 22px;
-  border-color: var(--line-strong);
-  border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 14px 38px rgba(17, 17, 17, 0.04);
-}
-
-.setup-card > span {
-  display: block;
-  margin-bottom: 12px;
-  color: var(--soft);
-  font-size: 0.84rem;
-  font-weight: 700;
-}
-
-.setup-card ol {
-  display: grid;
-  margin: 0;
-  padding-left: 20px;
-  gap: 10px;
-}
-
-.setup-card li {
-  color: var(--ink);
-  line-height: 1.45;
-}
-
-.setup-card p {
-  margin: 16px 0 0;
-  color: var(--muted);
-  font-size: 0.94rem;
-  line-height: 1.45;
-}
-
-.setup-card code {
-  padding: 1px 4px;
-  border-radius: 5px;
-  background: var(--copy-surface);
-  color: var(--ink);
-  font-size: 0.88em;
-}
-
 .requirements-strip {
   display: grid;
   grid-template-columns: 140px minmax(0, 1fr);
@@ -808,6 +748,11 @@ select {
   line-height: 1.2;
 }
 
+.requirements-strip .requirements-row {
+  flex-basis: 100%;
+  width: fit-content;
+}
+
 .requirements-strip a {
   display: inline-block;
   color: inherit;
@@ -842,6 +787,11 @@ select {
   line-height: 1.45;
 }
 
+.requirements-strip .roi-note {
+  margin-top: 4px;
+  color: var(--ink);
+}
+
 @keyframes skill-step {
   0%,
   100% {
@@ -851,6 +801,98 @@ select {
   16%,
   42% {
     opacity: 1;
+  }
+}
+
+@keyframes copy-pop {
+  0% {
+    transform: translateY(-1px) scale(1);
+  }
+
+  34% {
+    transform: translateY(-3px) scale(1.13) rotate(-1.5deg);
+  }
+
+  58% {
+    transform: translateY(-2px) scale(0.98) rotate(1deg);
+  }
+
+  100% {
+    transform: translateY(-1px) scale(1) rotate(0);
+  }
+}
+
+@keyframes copy-ring {
+  0% {
+    opacity: 0;
+    transform: scale(0.78);
+  }
+
+  22% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.28);
+  }
+}
+
+@keyframes copy-spark {
+  0% {
+    opacity: 0;
+    box-shadow:
+      0 0 0 #ff5f57,
+      0 0 0 #ffbd2e,
+      0 0 0 #28c840,
+      0 0 0 #4197ff,
+      0 0 0 #111,
+      0 0 0 #ff5f57;
+    transform: translate(-50%, -50%) scale(0.2);
+  }
+
+  20% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    box-shadow:
+      -42px -26px 0 #ff5f57,
+      39px -29px 0 #ffbd2e,
+      45px 19px 0 #28c840,
+      -38px 27px 0 #4197ff,
+      0 -40px 0 #111,
+      2px 38px 0 #ff5f57;
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+}
+
+@keyframes copy-confetti {
+  0% {
+    opacity: 0;
+    box-shadow:
+      0 0 0 0 #ffbd2e,
+      0 0 0 0 #28c840,
+      0 0 0 0 #4197ff,
+      0 0 0 0 #ff5f57,
+      0 0 0 0 #111;
+    transform: translate(-50%, -50%) scale(0.2) rotate(0deg);
+  }
+
+  24% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    box-shadow:
+      -54px 4px 0 1px #ffbd2e,
+      52px -4px 0 1px #28c840,
+      -32px -36px 0 1px #4197ff,
+      30px 34px 0 1px #ff5f57,
+      0 -50px 0 1px #111;
+    transform: translate(-50%, -50%) scale(1) rotate(22deg);
   }
 }
 
@@ -1025,11 +1067,6 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .hero-command {
-    grid-template-columns: minmax(0, 1fr) 42px;
-    width: min(100%, 360px);
-  }
-
   .thesis-strip span {
     padding-bottom: 0;
   }
@@ -1087,10 +1124,6 @@ code {
     font-size: 1.1rem;
   }
 
-  .hero-command {
-    width: 100%;
-  }
-
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1102,5 +1135,15 @@ code {
     opacity: 1;
     transform: none;
     animation: none;
+  }
+
+  .chat-copy-button,
+  .chat-copy-button.copy-celebrate,
+  .chat-copy-button.copy-celebrate::before,
+  .chat-copy-button.copy-celebrate::after,
+  .chat-copy-button.copy-celebrate .copy-spark {
+    transform: none;
+    animation: none;
+    transition: none;
   }
 }

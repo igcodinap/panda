@@ -2,6 +2,13 @@
 import "../styles/global.css";
 
 const repoUrl = "https://github.com/igcodinap/panda";
+const latestReleaseUrl = `${repoUrl}/releases/latest`;
+const installPrompt = `Please install Panda for Codex.
+
+Use the latest release:
+${latestReleaseUrl}
+
+After installing, make Panda available as a Codex skill and run a dry-run smoke check.`;
 const baseUrl = import.meta.env.BASE_URL.endsWith("/")
   ? import.meta.env.BASE_URL
   : `${import.meta.env.BASE_URL}/`;
@@ -103,9 +110,6 @@ const sources = [
       <header class="topbar">
         <div class="topbar-inner">
           <a class="brand" href="#top" aria-label="Panda home">
-            <span class="brand-mark" aria-hidden="true">
-              <img src={logoUrl} width="48" height="43" alt="" />
-            </span>
             <span class="brand-word">panda</span>
           </a>
           <nav class="nav" aria-label="Primary navigation">
@@ -146,24 +150,12 @@ const sources = [
             Panda runs independent model consultations around a Codex task, extracts structured contracts,
             preserves useful disagreement, and lets Codex integrate only what survives local evidence and tests.
           </p>
-          <div class="hero-command">
-            <pre id="quick-command"><code>git clone https://github.com/igcodinap/panda</code></pre>
-            <button
-              class="copy-button icon-copy-button"
-              type="button"
-              data-copy="quick-command"
-              aria-label="Copy install command"
-            >
-              <span class="copy-icon" aria-hidden="true"></span>
-              <span class="sr-only" data-copy-label>Copy</span>
-            </button>
-          </div>
           <p class="hero-command-note">
-            paste this in terminal, then <a href="#usage">set it up for Codex</a>
+            <a href="#usage">set it up for Codex</a>
           </p>
-          <div class="codex-demo hero-codex-demo" aria-label="Codex invoking Panda's configured behavior">
+          <div class="codex-demo hero-codex-demo mac-window" aria-label="Codex invoking Panda's configured behavior">
             <div class="codex-demo-header">
-              <span>Codex</span>
+              <span><span class="window-controls" aria-hidden="true"></span>Codex</span>
               <strong>config-aware skill trigger</strong>
             </div>
             <div class="codex-thread">
@@ -291,30 +283,40 @@ const sources = [
           <div class="section">
             <div class="section-header">
               <h2>Install and run</h2>
-              <p class="section-intro">
-                Download Panda, install the local artifact helpers, and make the skill available so Codex can
-                call it during review, planning, debugging, and implementation work.
-              </p>
             </div>
             <div class="usage-grid usage-primary">
-              <div class="code-panel">
-                <div class="code-panel-header">
-                  <span>Download and install the checkout</span>
-                  <button class="copy-button" type="button" data-copy="install-command">Copy</button>
+              <div class="codex-demo install-codex-demo mac-window" aria-label="Ask Codex to install Panda">
+                <div class="codex-demo-header">
+                  <span><span class="window-controls" aria-hidden="true"></span>Codex</span>
+                  <strong>install request</strong>
                 </div>
-                <pre id="install-command"><code>git clone https://github.com/igcodinap/panda.git
-cd panda
-python3 -m pip install -e .</code></pre>
-              </div>
-              <div class="setup-card">
-                <span>Set up Codex access</span>
-                <ol>
-                  <li>Open the Panda checkout in Codex or make its <code>SKILL.md</code> available as a Codex skill.</li>
-                  <li>Confirm <code>codex</code> is on PATH and authenticated, or set <code>CODEX_BIN</code> to an authenticated Codex CLI.</li>
-                  <li>Add Claude Code or OpenCode only when you want extra advisor sources.</li>
-                  <li>Ask Codex: <strong>review this with Panda</strong>.</li>
-                </ol>
-                <p>With no saved config, Panda starts with the Codex reviewer. Optional CLIs can be saved into the behavior profile later.</p>
+                <div class="codex-thread">
+                  <div class="chat-bubble user-bubble install-prompt-bubble">
+                    <div class="chat-bubble-top">
+                      <span>You</span>
+                      <button
+                        class="copy-button chat-copy-button"
+                        type="button"
+                        data-copy="install-codex-prompt"
+                        aria-label="Copy install prompt"
+                      >
+                        <span data-copy-label>Copy prompt</span>
+                        <span class="copy-spark" aria-hidden="true"></span>
+                      </button>
+                    </div>
+                    <p id="install-codex-prompt">{installPrompt}</p>
+                  </div>
+                  <div class="chat-bubble codex-bubble">
+                    <span>Codex</span>
+                    <p>I’ll fetch the Panda checkout, install the local helpers, sync the skill, and verify the default Codex reviewer path.</p>
+                  </div>
+                  <div class="skill-run" aria-hidden="true">
+                    <span>download Panda checkout</span>
+                    <span>install local artifact helpers</span>
+                    <span>make Panda skill available</span>
+                    <span>dry-run smoke passes</span>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="requirements-strip" aria-label="Panda requirements">
@@ -325,8 +327,7 @@ python3 -m pip install -e .</code></pre>
                   <a href="https://developers.openai.com/codex/cli" target="_blank" rel="noreferrer">Codex CLI</a>
                   installed and authenticated, or <code>CODEX_BIN</code> set to an authenticated CLI
                 </li>
-                <li>Panda skill available to Codex</li>
-                <li>
+                <li class="requirements-row">
                   <a href="https://docs.anthropic.com/en/docs/claude-code/overview" target="_blank" rel="noreferrer">
                     Claude Code
                   </a>
@@ -341,6 +342,12 @@ python3 -m pip install -e .</code></pre>
                 The minimum working setup is Python plus Codex. Claude Code and OpenCode are
                 optional sources of extra review pressure; save them into Panda's behavior profile
                 when you want future runs to use them.
+              </p>
+              <p class="roi-note">
+                ROI recommendation: after Codex, the first optional paid add-on is
+                <a href="https://opencode.ai/go" target="_blank" rel="noreferrer">OpenCode Go</a>,
+                currently listed at $5 for the first month and then $10/month. It gives Panda a
+                separate budget for Kimi, GLM, Qwen, and other OpenCode-backed review agents.
               </p>
             </div>
           </div>
@@ -442,9 +449,13 @@ python3 -m pip install -e .</code></pre>
           };
           try {
             await navigator.clipboard.writeText(text.trim());
+            button.classList.remove("copy-celebrate");
+            void button.offsetWidth;
+            button.classList.add("copy-celebrate");
             setLabel("Copied");
             window.setTimeout(() => {
               setLabel(originalLabel);
+              button.classList.remove("copy-celebrate");
             }, 1300);
           } catch {
             const selection = window.getSelection();
