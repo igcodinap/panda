@@ -1,0 +1,28 @@
+README.md
+  s_01cd10bc393510::t_6cc73fd30b4d5b 80-85
+  s_01cd10bc393510::t_dff090f52228be 29-41,95-97
+site/src/pages/index.astro
+  s_01cd10bc393510::t_dff090f52228be 313-314,317,324-329,334,338,342-344
+  s_01cd10bc393510::t_62e616e4ea866a 167,176-190,194-195
+SKILL.md
+  s_01cd10bc393510::t_6cc73fd30b4d5b 126-127
+  s_01cd10bc393510::t_dff090f52228be 44-50,74
+site/src/styles/global.css
+  s_01cd10bc393510::t_341b2acf0af95c 656-700,1049-1051
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "78315cfbcfb7cf48d7e98c5342168e1671fe7376",
+  "prompts": {},
+  "sessions": {
+    "s_01cd10bc393510": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e748a-8bd9-7aa0-84bb-6a5ad619fb86",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
