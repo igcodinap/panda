@@ -16,7 +16,8 @@ SPEC.loader.exec_module(panda_eval)
 
 
 class PandaEvalTests(unittest.TestCase):
-    def write_successful_panda_artifacts(self, output_dir: Path) -> None:
+    def write_successful_panda_artifacts(self, output_dir: Path, tools=None) -> None:
+        tools = tuple(tools or panda_eval.REQUIRED_PANDA_TOOLS)
         output_dir.mkdir(parents=True, exist_ok=True)
         evidence = {
             "schema_version": panda_eval.SCHEMA_VERSION,
@@ -28,12 +29,16 @@ class PandaEvalTests(unittest.TestCase):
                     "timed_out": False,
                     "raw_output_path": str(output_dir / f"{tool}.txt"),
                 }
-                for tool in panda_eval.REQUIRED_PANDA_TOOLS
+                for tool in tools
             ],
         }
-        (output_dir / "manifest.json").write_text("{}", encoding="utf-8")
+        manifest = {
+            "requested_tools": list(tools),
+            "tools": [{"tool": tool, "status": "success"} for tool in tools],
+        }
+        (output_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         (output_dir / "evidence.json").write_text(json.dumps(evidence), encoding="utf-8")
-        for tool in panda_eval.REQUIRED_PANDA_TOOLS:
+        for tool in tools:
             (output_dir / f"{tool}.summary.json").write_text("{}", encoding="utf-8")
             (output_dir / f"{tool}.txt").write_text("ok", encoding="utf-8")
 
@@ -142,6 +147,41 @@ class PandaEvalTests(unittest.TestCase):
         self.assertFalse(panda_eval.contains_budget_failure("Keep prompts bounded to fit the token budget."))
         self.assertTrue(panda_eval.contains_budget_failure("Claude quota exceeded during the run."))
         self.assertTrue(panda_eval.contains_budget_failure("usage limit reached"))
+
+    def test_record_result_uses_manifest_tools_for_codex_only_panda_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir)
+            args = panda_eval.build_parser().parse_args(["init", "--run-dir", tmpdir])
+            with redirect_stdout(io.StringIO()):
+                panda_eval.init_run(args)
+            panda_dir = run_dir / "panda"
+            self.write_successful_panda_artifacts(panda_dir, tools=("codex",))
+            args = panda_eval.build_parser().parse_args([
+                "record",
+                "--run-dir",
+                tmpdir,
+                "--task-id",
+                "astropy__astropy-14995",
+                "--variant",
+                "panda_explore",
+                "--tests-passed",
+                "true",
+                "--wall-seconds",
+                "20",
+                "--panda-output-dir",
+                str(panda_dir),
+            ])
+
+            with redirect_stdout(io.StringIO()):
+                panda_eval.record_result(args)
+
+            result = json.loads(
+                (run_dir / "tasks" / "astropy__astropy-14995" / "panda_explore" / "result.json")
+                .read_text(encoding="utf-8")
+            )
+            self.assertFalse(result["panda_run_failed"])
+            self.assertEqual(list(result["panda_core_status"]), ["codex"])
+            self.assertEqual(result["panda_artifact_failures"], [])
 
     def test_record_result_persists_task_variant_and_updates_results_index(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -738,6 +778,50 @@ class PandaEvalTests(unittest.TestCase):
             self.assertIn("field names", prompt)
             self.assertIn("unexported type names", prompt)
             self.assertIn("backward-compatibility seams", prompt)
+
+    def test_prepare_first_pass_accepts_codex_tool(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir)
+            workspace = run_dir / "workspace"
+            workspace.mkdir()
+            task_id = "hard-codex"
+            (run_dir / "tasks.json").write_text(
+                json.dumps({
+                    "schema_version": panda_eval.SCHEMA_VERSION,
+                    "tasks": [
+                        {
+                            "task_id": task_id,
+                            "repo_hint": "owner/repo",
+                            "problem_statement": "Need a portable reviewer.",
+                        }
+                    ],
+                }),
+                encoding="utf-8",
+            )
+            args = panda_eval.build_parser().parse_args([
+                "prepare-first-pass",
+                "--run-dir",
+                tmpdir,
+                "--task-id",
+                task_id,
+                "--workspace",
+                str(workspace),
+                "--tool",
+                "codex",
+            ])
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                panda_eval.prepare_first_pass(args)
+
+            metadata = json.loads(
+                (
+                    panda_eval.safe_result_dir(run_dir, task_id, panda_eval.REPLAY_VARIANT)
+                    / "prompt_metadata.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertIn("--tool codex", stdout.getvalue())
+            self.assertEqual(metadata["command"][metadata["command"].index("--tool") + 1], "codex")
             self.assertEqual(metadata["prompt_version"], 2)
             self.assertIn("--protocol", metadata["command"])
             self.assertIn("v2", metadata["command"])

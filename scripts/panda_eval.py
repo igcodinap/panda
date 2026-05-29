@@ -64,6 +64,7 @@ HARD_LOCAL_TIMEOUT = 600
 DEFAULT_STRAGGLER_TIMEOUT = 120
 DEFAULT_RUN_ROOT = Path(tempfile.gettempdir()) / "panda-eval"
 REQUIRED_PANDA_TOOLS = ("claude", "opencode", "qwen")
+PANDA_TOOL_CHOICES = ("claude", "opencode", "qwen", "codex", "all", "auto")
 HARD_LOCAL_TARGET_COUNT = 20
 HARD_LOCAL_EXPANSION_COUNT = 10
 HARD_LOCAL_MAX_COUNT = 30
@@ -1540,18 +1541,31 @@ def prepare_falsifier(args: argparse.Namespace) -> int:
     return 0
 
 
-def inspect_panda_run(output_dir: Path, required_tools: Iterable[str] = REQUIRED_PANDA_TOOLS) -> dict:
-    required = tuple(required_tools)
+def manifest_requested_tools(manifest: Optional[dict]) -> tuple[str, ...]:
+    if not isinstance(manifest, dict):
+        return ()
+
+    requested = manifest.get("requested_tools")
+    if isinstance(requested, list):
+        tools = [tool for tool in requested if isinstance(tool, str)]
+        if tools:
+            return tuple(dict.fromkeys(tools))
+
+    manifest_tools = manifest.get("tools")
+    if isinstance(manifest_tools, list):
+        tools = [
+            tool.get("tool")
+            for tool in manifest_tools
+            if isinstance(tool, dict) and isinstance(tool.get("tool"), str)
+        ]
+        if tools:
+            return tuple(dict.fromkeys(tools))
+
+    return ()
+
+
+def inspect_panda_run(output_dir: Path, required_tools: Optional[Iterable[str]] = None) -> dict:
     artifact_failures = []
-    core_status = {
-        tool: {
-            "status": "missing",
-            "returncode": None,
-            "timed_out": False,
-            "budget_failure": False,
-        }
-        for tool in required
-    }
     evidence = None
     manifest = None
 
@@ -1569,6 +1583,20 @@ def inspect_panda_run(output_dir: Path, required_tools: Iterable[str] = REQUIRED
             manifest = parsed
         else:
             evidence = parsed
+
+    if required_tools is None:
+        required = manifest_requested_tools(manifest) or REQUIRED_PANDA_TOOLS
+    else:
+        required = tuple(required_tools)
+    core_status = {
+        tool: {
+            "status": "missing",
+            "returncode": None,
+            "timed_out": False,
+            "budget_failure": False,
+        }
+        for tool in required
+    }
 
     for tool in required:
         for suffix in (".txt", ".summary.json"):
@@ -2172,7 +2200,7 @@ def build_parser() -> argparse.ArgumentParser:
     first_pass_parser.add_argument("--task-id", required=True)
     first_pass_parser.add_argument("--workspace", type=Path, required=True)
     first_pass_parser.add_argument("--output-dir", type=Path)
-    first_pass_parser.add_argument("--tool", choices=("claude", "opencode", "qwen", "all"), default="all")
+    first_pass_parser.add_argument("--tool", choices=PANDA_TOOL_CHOICES, default="all")
     first_pass_parser.add_argument("--profile", default=DEFAULT_PROFILE)
     first_pass_parser.add_argument("--timeout", type=int, default=HARD_LOCAL_TIMEOUT)
     first_pass_parser.add_argument("--role", default="implementation-review")
@@ -2191,7 +2219,7 @@ def build_parser() -> argparse.ArgumentParser:
     second_pass_parser.add_argument("--test-output-path", type=Path)
     second_pass_parser.add_argument("--workspace", type=Path)
     second_pass_parser.add_argument("--output-dir", type=Path)
-    second_pass_parser.add_argument("--tool", choices=("claude", "opencode", "qwen", "all"), default="all")
+    second_pass_parser.add_argument("--tool", choices=PANDA_TOOL_CHOICES, default="all")
     second_pass_parser.add_argument("--profile", default=DEFAULT_PROFILE)
     second_pass_parser.add_argument("--timeout", type=int, default=HARD_LOCAL_TIMEOUT)
     second_pass_parser.add_argument("--role", default="debugging")
@@ -2209,7 +2237,7 @@ def build_parser() -> argparse.ArgumentParser:
     falsifier_parser.add_argument("--test-output-path", type=Path)
     falsifier_parser.add_argument("--workspace", type=Path)
     falsifier_parser.add_argument("--output-dir", type=Path)
-    falsifier_parser.add_argument("--tool", choices=("claude", "opencode", "qwen", "all"), default="all")
+    falsifier_parser.add_argument("--tool", choices=PANDA_TOOL_CHOICES, default="all")
     falsifier_parser.add_argument("--profile", default=DEFAULT_PROFILE)
     falsifier_parser.add_argument("--timeout", type=int, default=HARD_LOCAL_TIMEOUT)
     falsifier_parser.set_defaults(func=prepare_falsifier)

@@ -57,6 +57,9 @@ python3 scripts/consult_ai_team.py \
   --prompt "SWE-bench task TASK_ID. Inspect the clean checkout, identify likely fix areas, risks, and verification plan. Do not edit files."
 ```
 
+Use `--tool auto` or `--tool codex` when measuring the portable Codex-reviewer
+fallback separately from the legacy `--tool all` full-Panda baseline.
+
 Read `evidence.json` and `{tool}.summary.json` first. Inspect raw logs only when needed.
 
 ## 4. Record Results

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run consultations against local Claude Code and OpenCode CLIs."""
+"""Run consultations against local Claude Code, OpenCode, and Codex CLIs."""
 
 from __future__ import annotations
 
@@ -47,11 +47,16 @@ ROLE_GUIDANCE = {
 
 DEFAULT_OPENCODE_MODEL = "opencode-go/glm-5.1"
 DEFAULT_QWEN_MODEL = "opencode-go/qwen3.6-plus"
+DEFAULT_CODEX_MODEL = "gpt-5.5"
+DEFAULT_CODEX_EFFORT = "medium"
 DEFAULT_APPROVAL_MODE = "unsupervised"
 EXECUTION_CHOICES = ("auto", "parallel", "sequential")
 APPROVAL_MODE_CHOICES = ("unsupervised", "supervised")
 CLAUDE_EFFORT_CHOICES = ("low", "medium", "high", "xhigh", "max")
-TOOL_CHOICES = ("claude", "opencode", "qwen", "all")
+CODEX_EFFORT_CHOICES = ("low", "medium", "high", "xhigh")
+LEGACY_ALL_TOOLS = ("claude", "opencode", "qwen")
+AUTO_TOOL_ORDER = ("claude", "opencode", "qwen", "codex")
+TOOL_CHOICES = ("claude", "opencode", "qwen", "codex", "all", "auto")
 PROTOCOL_CHOICES = ("v2",)
 PATCH_MODE = "patch"
 PATCH_MODE_DISABLED_MESSAGE = (
@@ -74,6 +79,8 @@ MODEL_PROFILES = {
         "claude_effort": "medium",
         "opencode_model": DEFAULT_OPENCODE_MODEL,
         "qwen_model": DEFAULT_QWEN_MODEL,
+        "codex_model": DEFAULT_CODEX_MODEL,
+        "codex_effort": DEFAULT_CODEX_EFFORT,
         "cost_tier": "low",
     },
     "balanced": {
@@ -81,6 +88,8 @@ MODEL_PROFILES = {
         "claude_effort": "high",
         "opencode_model": DEFAULT_OPENCODE_MODEL,
         "qwen_model": DEFAULT_QWEN_MODEL,
+        "codex_model": DEFAULT_CODEX_MODEL,
+        "codex_effort": DEFAULT_CODEX_EFFORT,
         "cost_tier": "medium",
     },
     "deep": {
@@ -88,6 +97,8 @@ MODEL_PROFILES = {
         "claude_effort": "max",
         "opencode_model": DEFAULT_OPENCODE_MODEL,
         "qwen_model": DEFAULT_QWEN_MODEL,
+        "codex_model": DEFAULT_CODEX_MODEL,
+        "codex_effort": DEFAULT_CODEX_EFFORT,
         "cost_tier": "high",
     },
 }
@@ -118,6 +129,8 @@ EXPLICIT_ARG_FLAGS = {
     "--claude-effort": "claude_effort",
     "--opencode-model": "opencode_model",
     "--qwen-model": "qwen_model",
+    "--codex-model": "codex_model",
+    "--codex-effort": "codex_effort",
 }
 
 MODE_GUIDANCE = {
@@ -144,7 +157,7 @@ def parse_args() -> argparse.Namespace:
         "--tool",
         choices=TOOL_CHOICES,
         default="all",
-        help="Collaborator core to run. 'all' runs Claude+GLM+Qwen.",
+        help="Collaborator core to run. 'all' runs Claude+GLM+Qwen; 'auto' runs available cores with Codex fallback.",
     )
     parser.add_argument("--mode", default="explore", metavar="{advisory,explore}")
     parser.add_argument(
@@ -191,6 +204,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--claude-bin", default=os.environ.get("CLAUDE_BIN", "claude"))
     parser.add_argument("--opencode-bin", default=os.environ.get("OPENCODE_BIN", "opencode"))
+    parser.add_argument("--codex-bin", default=os.environ.get("CODEX_BIN", "codex"))
     parser.add_argument("--claude-model", help="Optional Claude Code model override.")
     parser.add_argument(
         "--claude-effort",
@@ -206,6 +220,15 @@ def parse_args() -> argparse.Namespace:
         help=f"OpenCode Qwen model in provider/model format. Defaults through profile to {DEFAULT_QWEN_MODEL}.",
     )
     parser.add_argument(
+        "--codex-model",
+        help=f"Codex reviewer model. Defaults through profile/env to {DEFAULT_CODEX_MODEL}.",
+    )
+    parser.add_argument(
+        "--codex-effort",
+        choices=CODEX_EFFORT_CHOICES,
+        help=f"Codex reviewer reasoning effort. Defaults through profile/env to {DEFAULT_CODEX_EFFORT}.",
+    )
+    parser.add_argument(
         "--no-session-memory",
         action="store_true",
         help="Session mode: do not inject the previous turn's compact summary into the next prompt.",
@@ -219,6 +242,9 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     validate_choice(parser, "AI_TEAM_EXECUTION/--execution", args.execution, EXECUTION_CHOICES)
     validate_choice(parser, "AI_TEAM_APPROVAL_MODE/--approval-mode", args.approval_mode, APPROVAL_MODE_CHOICES)
+    env_codex_effort = os.environ.get("CODEX_REASONING_EFFORT") or os.environ.get("CODEX_EFFORT")
+    if args.codex_effort is None and env_codex_effort:
+        validate_choice(parser, "CODEX_REASONING_EFFORT/CODEX_EFFORT", env_codex_effort, CODEX_EFFORT_CHOICES)
     if args.mode == PATCH_MODE:
         parser.error(PATCH_MODE_DISABLED_MESSAGE)
     validate_choice(parser, "--mode", args.mode, MODE_GUIDANCE)
@@ -258,9 +284,13 @@ def resolve_profile(args: argparse.Namespace) -> dict:
 
     profile = MODEL_PROFILES[profile_name]
     env_opencode_model = os.environ.get("OPENCODE_MODEL")
+    env_codex_model = os.environ.get("CODEX_MODEL")
+    env_codex_effort = os.environ.get("CODEX_REASONING_EFFORT") or os.environ.get("CODEX_EFFORT")
     claude_model = args.claude_model or profile["claude_model"]
     claude_effort = args.claude_effort or profile["claude_effort"]
     qwen_model = args.qwen_model or profile["qwen_model"]
+    codex_model = args.codex_model or env_codex_model or profile["codex_model"]
+    codex_effort = args.codex_effort or env_codex_effort or profile["codex_effort"]
     if args.opencode_model:
         opencode_model = args.opencode_model
     elif args.profile:
@@ -278,23 +308,29 @@ def resolve_profile(args: argparse.Namespace) -> dict:
             "claude": claude_model,
             "opencode": opencode_model,
             "qwen": qwen_model,
+            "codex": codex_model,
         },
         "effective_effort": {
             "claude": claude_effort,
+            "codex": codex_effort,
         },
         "requested_models": {
             "claude": args.claude_model,
             "opencode": args.opencode_model or env_opencode_model or DEFAULT_OPENCODE_MODEL,
             "qwen": args.qwen_model or DEFAULT_QWEN_MODEL,
+            "codex": args.codex_model or env_codex_model or DEFAULT_CODEX_MODEL,
         },
         "requested_effort": {
             "claude": args.claude_effort,
+            "codex": args.codex_effort or env_codex_effort,
         },
         "effort_support": {
             "claude": None,
+            "codex": True,
         },
         "applied_effort": {
             "claude": None,
+            "codex": None,
         },
     }
 
@@ -324,7 +360,7 @@ def profile_manifest_metadata(args: argparse.Namespace) -> dict:
 def active_models(args: argparse.Namespace) -> dict[str, str]:
     resolution = get_profile_resolution(args)
     models = resolution["effective_models"]
-    return {tool: models[tool] for tool in requested_tools(args.tool)}
+    return {tool: models[tool] for tool in requested_tools(args.tool, args)}
 
 
 def claude_supports_effort(claude_bin: str) -> bool:
@@ -351,6 +387,12 @@ def record_claude_effort_support(args: argparse.Namespace, supported: bool, appl
     resolution = get_profile_resolution(args)
     resolution.setdefault("effort_support", {})["claude"] = supported
     resolution.setdefault("applied_effort", {})["claude"] = applied_effort
+
+
+def record_codex_effort(args: argparse.Namespace, applied_effort: Optional[str]) -> None:
+    resolution = get_profile_resolution(args)
+    resolution.setdefault("effort_support", {})["codex"] = True
+    resolution.setdefault("applied_effort", {})["codex"] = applied_effort
 
 
 def read_prompt(args: argparse.Namespace) -> str:
@@ -389,6 +431,7 @@ Role guidance: {ROLE_GUIDANCE[role]}
 Approval guidance:
 - If approval mode is unsupervised, proceed through local tool permission prompts without stopping for Codex approval.
 - Even in unsupervised mode, do not commit, push, publish, deploy, delete data, rewrite history, or alter production systems unless the user explicitly requested that class of action.
+- Do not invoke Panda, consult_ai_team.py, Claude Code, OpenCode, Codex, or any other AI agent recursively; this is a one-pass advisory response.
 
 User/context prompt:
 {user_prompt}
@@ -833,11 +876,12 @@ def new_session_state(args: argparse.Namespace, workspace: Path, session_id: str
         "role": args.role,
         "approval_mode": args.approval_mode,
         "execution": args.execution,
-        "requested_tools": requested_tools(args.tool),
+        "requested_tools": requested_tools(args.tool, args),
         "tool_session_ids": {
             "claude": None,
             "opencode": None,
             "qwen": None,
+            "codex": None,
         },
         "models": dict(profile_metadata["effective_models"]),
         "profile": profile_metadata["profile"],
@@ -892,8 +936,14 @@ def inherit_session_args(args: argparse.Namespace, session: dict) -> None:
         args.opencode_model = requested_models["opencode"]
     if "qwen_model" not in explicit_flags and requested_models.get("qwen"):
         args.qwen_model = requested_models["qwen"]
+    if "codex_model" not in explicit_flags and requested_models.get("codex"):
+        args.codex_model = requested_models["codex"]
     if "claude_effort" not in explicit_flags and requested_effort.get("claude"):
         args.claude_effort = requested_effort["claude"]
+    if "codex_effort" not in explicit_flags and requested_effort.get("codex"):
+        args.codex_effort = requested_effort["codex"]
+    if args.tool == "auto" and "tool" not in explicit_flags and session.get("requested_tools"):
+        args._auto_requested_tools = list(session["requested_tools"])
     args.profile_resolution = resolve_profile(args)
 
 
@@ -1261,10 +1311,64 @@ def run_one_shot_commands(
     return raw_results
 
 
-def requested_tools(tool: str) -> list[str]:
+def executable_available(binary: str) -> bool:
+    resolved = shutil.which(binary)
+    if resolved:
+        return True
+    if os.sep not in binary and (os.altsep is None or os.altsep not in binary):
+        return False
+    path = Path(binary).expanduser()
+    return path.exists() and os.access(path, os.X_OK)
+
+
+def tool_is_available(tool: str, args: argparse.Namespace) -> bool:
+    if tool == "claude":
+        return executable_available(args.claude_bin)
+    if tool in OPENCODE_BACKED_TOOLS:
+        return executable_available(args.opencode_bin)
+    if tool == "codex":
+        return executable_available(args.codex_bin)
+    return False
+
+
+def resolve_auto_tools(args: argparse.Namespace) -> list[str]:
+    cached = getattr(args, "_auto_requested_tools", None)
+    if cached:
+        return list(cached)
+
+    requested = [tool for tool in AUTO_TOOL_ORDER if tool_is_available(tool, args)]
+    skipped = [tool for tool in AUTO_TOOL_ORDER if tool not in requested]
+    if not requested:
+        args._auto_requested_tools = []
+        args._auto_skipped_tools = list(AUTO_TOOL_ORDER)
+        raise SystemExit(
+            "--tool auto could not find any advisor CLI. Install Claude Code, OpenCode, or Codex CLI, "
+            "or pass an explicit --tool with its matching --*-bin option."
+        )
+
+    args._auto_requested_tools = list(requested)
+    args._auto_skipped_tools = skipped
+    return list(requested)
+
+
+def requested_tools(tool: str, args: Optional[argparse.Namespace] = None) -> list[str]:
     if tool == "all":
-        return ["claude", "opencode", "qwen"]
+        return list(LEGACY_ALL_TOOLS)
+    if tool == "auto":
+        if args is None:
+            return ["codex"]
+        return resolve_auto_tools(args)
     return [tool]
+
+
+def tool_selection_warnings(args: argparse.Namespace) -> list[dict]:
+    if args.tool != "auto":
+        return []
+    requested_tools(args.tool, args)
+    return [
+        {"tool": tool, "code": "auto_tool_unavailable"}
+        for tool in getattr(args, "_auto_skipped_tools", [])
+    ]
 
 
 def build_commands(
@@ -1273,7 +1377,7 @@ def build_commands(
     run_cwd: Path,
     session: Optional[dict] = None,
 ) -> tuple[dict[str, list[str]], set[str]]:
-    requested = requested_tools(args.tool)
+    requested = requested_tools(args.tool, args)
     commands: dict[str, list[str]] = {}
     json_tools: set[str] = set()
     profile_resolution = get_profile_resolution(args)
@@ -1352,6 +1456,30 @@ def build_commands(
         add_opencode_backed_command("opencode", "opencode")
     if "qwen" in requested:
         add_opencode_backed_command("qwen", "qwen", "qwen")
+    if "codex" in requested:
+        codex_bin = shutil.which(args.codex_bin) or args.codex_bin
+        codex_command = [
+            codex_bin,
+            "--ask-for-approval",
+            "never",
+            "exec",
+            "--ephemeral",
+            "--sandbox",
+            "read-only",
+            "--color",
+            "never",
+            "-C",
+            str(run_cwd),
+        ]
+        codex_model = profile_resolution["effective_models"]["codex"]
+        codex_effort = profile_resolution["effective_effort"]["codex"]
+        if codex_model:
+            codex_command.extend(["--model", codex_model])
+        if codex_effort:
+            codex_command.extend(["-c", f'model_reasoning_effort="{codex_effort}"'])
+        record_codex_effort(args, codex_effort)
+        codex_command.append(prompt)
+        commands["codex"] = codex_command
     return commands, json_tools
 
 
@@ -1414,10 +1542,15 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
         "output_dir": str(output_dir),
         "workspace": str(workspace),
         "run_cwd": str(run_cwd),
-        "requested_tools": requested_tools(args.tool),
+        "requested_tools": requested_tools(args.tool, args),
         "serialize_opencode": serialize_opencode,
         "tools": results,
-        "telemetry": build_telemetry(raw_results, artifact_paths, prompt=prompt),
+        "telemetry": build_telemetry(
+            raw_results,
+            artifact_paths,
+            prompt=prompt,
+            extra_warnings=tool_selection_warnings(args),
+        ),
     }
     manifest["protocol"] = args.protocol
     manifest.update(profile_manifest_metadata(args))
@@ -1871,7 +2004,7 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
             "role": args.role,
             "approval_mode": args.approval_mode,
             "execution": args.execution,
-            "requested_tools": requested_tools(args.tool),
+            "requested_tools": requested_tools(args.tool, args),
             "models": dict(profile_metadata["effective_models"]),
             "profile": profile_metadata["profile"],
             "profile_source": profile_metadata["profile_source"],
@@ -1951,6 +2084,7 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
         })
 
         recovery_warnings = [{"tool": None, "code": note} for note in recovery_notes]
+        extra_warnings = recovery_warnings + tool_selection_warnings(args)
         manifest = {
             "schema_version": SCHEMA_VERSION,
             "session_id": session["session_id"],
@@ -1967,7 +2101,7 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
             "workspace": str(workspace),
             "tool": args.tool,
             "run_cwd": str(run_cwd),
-            "requested_tools": requested_tools(args.tool),
+            "requested_tools": requested_tools(args.tool, args),
             "serialize_opencode": serialize_opencode,
             "session_memory": memory_info,
             "recovery_notes": recovery_notes,
@@ -1980,7 +2114,7 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
                 raw_results,
                 artifact_paths,
                 prompt=prompt,
-                extra_warnings=recovery_warnings,
+                extra_warnings=extra_warnings,
             ),
         }
         manifest["protocol"] = args.protocol

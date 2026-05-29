@@ -154,6 +154,8 @@ class ProfileResolutionTests(unittest.TestCase):
                     resolution["effective_models"]["qwen"],
                     consult_ai_team.DEFAULT_QWEN_MODEL,
                 )
+                self.assertEqual(resolution["effective_models"]["codex"], consult_ai_team.DEFAULT_CODEX_MODEL)
+                self.assertEqual(resolution["effective_effort"]["codex"], consult_ai_team.DEFAULT_CODEX_EFFORT)
 
     def test_explicit_profile_overrides_role_default(self) -> None:
         args = self.parse_with(["--role", "planning", "--profile", "fast", "--prompt", "test"])
@@ -232,6 +234,77 @@ class ProfileResolutionTests(unittest.TestCase):
         self.assertIn(consult_ai_team.DEFAULT_QWEN_MODEL, commands["qwen"])
         self.assertNotIn("--variant", commands["qwen"])
 
+    def test_codex_command_defaults_to_gpt55_medium_reasoning(self) -> None:
+        args = self.parse_with(["--tool", "codex", "--profile", "deep", "--prompt", "test"])
+
+        commands, json_tools = consult_ai_team.build_commands(args, "prompt", Path("/tmp"))
+
+        self.assertEqual(list(commands), ["codex"])
+        self.assertEqual(json_tools, set())
+        command = commands["codex"]
+        self.assertEqual(Path(command[0]).name, "codex")
+        self.assertEqual(command[1:4], ["--ask-for-approval", "never", "exec"])
+        self.assertIn("--ephemeral", command)
+        self.assertIn("--sandbox", command)
+        self.assertIn("read-only", command)
+        self.assertIn("--model", command)
+        self.assertIn(consult_ai_team.DEFAULT_CODEX_MODEL, command)
+        self.assertIn("-c", command)
+        self.assertIn('model_reasoning_effort="medium"', command)
+        self.assertEqual(args.profile_resolution["applied_effort"]["codex"], "medium")
+
+    def test_codex_model_and_effort_flags_override_defaults(self) -> None:
+        args = self.parse_with([
+            "--tool",
+            "codex",
+            "--codex-model",
+            "gpt-5.3-codex",
+            "--codex-effort",
+            "high",
+            "--prompt",
+            "test",
+        ])
+
+        commands, _ = consult_ai_team.build_commands(args, "prompt", Path("/tmp"))
+
+        self.assertIn("gpt-5.3-codex", commands["codex"])
+        self.assertIn('model_reasoning_effort="high"', commands["codex"])
+
+    def test_auto_tool_falls_back_to_codex_when_only_codex_is_available(self) -> None:
+        args = self.parse_with(["--tool", "auto", "--prompt", "test"])
+
+        def fake_which(binary: str):
+            return "/usr/bin/codex" if binary == "codex" else None
+
+        with patch.object(consult_ai_team.shutil, "which", side_effect=fake_which):
+            self.assertEqual(consult_ai_team.requested_tools(args.tool, args), ["codex"])
+            commands, _ = consult_ai_team.build_commands(args, "prompt", Path("/tmp"))
+
+        self.assertEqual(list(commands), ["codex"])
+        self.assertEqual(consult_ai_team.active_models(args), {"codex": consult_ai_team.DEFAULT_CODEX_MODEL})
+
+    def test_auto_tool_fails_clearly_when_no_advisor_cli_is_available(self) -> None:
+        args = self.parse_with(["--tool", "auto", "--prompt", "test"])
+
+        with patch.object(consult_ai_team.shutil, "which", return_value=None):
+            with self.assertRaisesRegex(SystemExit, "could not find any advisor CLI"):
+                consult_ai_team.requested_tools(args.tool, args)
+
+        self.assertEqual(args._auto_requested_tools, [])
+        self.assertEqual(args._auto_skipped_tools, list(consult_ai_team.AUTO_TOOL_ORDER))
+
+    def test_auto_tool_runs_all_available_cores(self) -> None:
+        args = self.parse_with(["--tool", "auto", "--prompt", "test"])
+
+        def fake_which(binary: str):
+            return f"/usr/bin/{binary}" if binary in {"claude", "opencode", "codex"} else None
+
+        with patch.object(consult_ai_team.shutil, "which", side_effect=fake_which):
+            with patch.object(consult_ai_team, "claude_supports_effort", return_value=False):
+                commands, _ = consult_ai_team.build_commands(args, "prompt", Path("/tmp"))
+
+        self.assertEqual(list(commands), ["claude", "opencode", "qwen", "codex"])
+
     def test_all_tool_runs_three_cores(self) -> None:
         args = self.parse_with(["--tool", "all", "--profile", "fast", "--prompt", "test"])
 
@@ -285,6 +358,7 @@ class PromptCompatibilityTests(unittest.TestCase):
         self.assertIn("Panda V2 contract artifact", prompt)
         self.assertIn("panda_contracts_v2", prompt)
         self.assertIn("Double-escape regex or path backslashes", prompt)
+        self.assertIn("Do not invoke Panda", prompt)
 
 
 class ManifestTests(unittest.TestCase):
@@ -392,6 +466,61 @@ class ManifestTests(unittest.TestCase):
             self.assertEqual(manifest["requested_tools"], ["opencode"])
             self.assertEqual(manifest["active_models"], {"opencode": consult_ai_team.DEFAULT_OPENCODE_MODEL})
             self.assertEqual([tool["tool"] for tool in manifest["tools"]], ["opencode"])
+
+    def test_codex_manifest_records_default_model_and_medium_effort(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            args = self.parse_with([
+                "--tool",
+                "codex",
+                "--dry-run",
+                "--output-dir",
+                tmpdir,
+                "--prompt",
+                "test",
+            ])
+            prompt = consult_ai_team.consultation_prompt(args.mode, args.role, args.approval_mode, "test")
+
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_one_shot(args, prompt)
+
+            manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["requested_tools"], ["codex"])
+            self.assertEqual(manifest["active_models"], {"codex": consult_ai_team.DEFAULT_CODEX_MODEL})
+            self.assertEqual(manifest["effective_effort"]["codex"], "medium")
+            self.assertEqual(manifest["applied_effort"]["codex"], "medium")
+            self.assertEqual([tool["tool"] for tool in manifest["tools"]], ["codex"])
+
+    def test_auto_manifest_records_unavailable_tool_warnings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = self.parse_with([
+                "--tool",
+                "auto",
+                "--dry-run",
+                "--output-dir",
+                tmpdir,
+                "--prompt",
+                "test",
+            ])
+            prompt = consult_ai_team.consultation_prompt(args.mode, args.role, args.approval_mode, "test")
+
+            def fake_which(binary: str):
+                return "/usr/bin/codex" if binary == "codex" else None
+
+            with patch.object(consult_ai_team.shutil, "which", side_effect=fake_which):
+                with redirect_stdout(io.StringIO()):
+                    consult_ai_team.run_one_shot(args, prompt)
+
+            manifest = json.loads((Path(tmpdir) / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["requested_tools"], ["codex"])
+            self.assertEqual(
+                manifest["telemetry"]["warnings"],
+                [
+                    {"tool": "claude", "code": "auto_tool_unavailable"},
+                    {"tool": "opencode", "code": "auto_tool_unavailable"},
+                    {"tool": "qwen", "code": "auto_tool_unavailable"},
+                ],
+            )
 
     def test_manifest_records_prompt_soft_limit_warning(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -544,6 +673,30 @@ Run the suite.
             self.assertEqual(manifest["telemetry"]["artifact_paths"]["contracts"], str(Path(tmpdir) / "panda_contracts.v2.json"))
             self.assertEqual(sidecar["artifact_kind"], "contracts")
             self.assertEqual(sidecar["reports"][0]["parse_status"], "missing")
+
+    def test_codex_dry_run_writes_evidence_summaries_and_contract_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = self.parse_with([
+                "--tool",
+                "codex",
+                "--dry-run",
+                "--output-dir",
+                tmpdir,
+                "--prompt",
+                "test",
+            ])
+            prompt = consult_ai_team.consultation_prompt(args.mode, args.role, args.approval_mode, "test")
+
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_one_shot(args, prompt)
+
+            evidence = json.loads((Path(tmpdir) / "evidence.json").read_text(encoding="utf-8"))
+            summary = json.loads((Path(tmpdir) / "codex.summary.json").read_text(encoding="utf-8"))
+            sidecar = json.loads((Path(tmpdir) / "panda_contracts.v2.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(evidence["findings"][0]["tool"], "codex")
+            self.assertEqual(summary["raw_output_path"], str(Path(tmpdir) / "codex.txt"))
+            self.assertEqual(sidecar["reports"][0]["tool"], "codex")
 
     def test_explicit_protocol_v2_dry_run_writes_contract_sidecar_without_changing_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

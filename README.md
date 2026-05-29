@@ -28,7 +28,8 @@ Prerequisites:
 - Python 3.9 or newer.
 - `claude` on `PATH`, or set `CLAUDE_BIN`.
 - `opencode` on `PATH`, or set `OPENCODE_BIN`.
-- Local authentication configured for those CLIs.
+- `codex` on `PATH`, or set `CODEX_BIN`, for the portable Codex reviewer fallback.
+- Local authentication configured for the CLIs you plan to run.
 
 From the repository root:
 
@@ -39,6 +40,20 @@ python3 scripts/consult_ai_team.py \
   --role implementation-review \
   --prompt "We need to implement X. Constraints: Y. What risks, alternatives, and tests should Codex consider?"
 ```
+
+If Claude Code or OpenCode is not installed, use the availability-aware Codex
+fallback:
+
+```bash
+python3 scripts/consult_ai_team.py \
+  --tool auto \
+  --mode explore \
+  --role implementation-review \
+  --prompt "Review this plan and surface risks, alternatives, and tests."
+```
+
+`--tool codex` runs only the Codex reviewer core. The Codex core defaults to
+`gpt-5.5` with `medium` reasoning.
 
 For a no-cost command preview:
 
@@ -65,8 +80,8 @@ to open a localhost socket in restricted environments.
 
 1. Codex gathers task context and decides whether consultation is worth the
    overhead.
-2. Panda runs Claude Code, OpenCode GLM, and OpenCode Qwen as independent
-   advisors.
+2. Panda runs Claude Code, OpenCode GLM, OpenCode Qwen, and/or the Codex
+   reviewer core as independent advisors.
 3. Advisors inspect and report; they do not own the working tree.
 4. Panda writes compact evidence artifacts.
 5. Codex reads the evidence, accepts or rejects advice, edits code, and verifies
@@ -130,8 +145,8 @@ when coordination cost, token budgets, and verification quality are controlled.
   independent pressure is likely to pay for itself.
 - Collaborator outputs are advice, not ground truth.
 - Benchmark results are still exploratory and contamination-sensitive.
-- Claude/OpenCode availability, rate limits, and local CLI state can affect
-  runs.
+- Claude/OpenCode/Codex availability, rate limits, and local CLI state can
+  affect runs.
 
 ## License
 
