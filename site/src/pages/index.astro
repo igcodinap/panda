@@ -159,20 +159,29 @@ const sources = [
             </button>
           </div>
           <p class="hero-command-note">
-            paste this in terminal, or <a href="#usage">see the full runner commands</a>
+            paste this in terminal, then <a href="#usage">set it up for Codex</a>
           </p>
-          <div class="hero-window" aria-label="Panda consultation preview">
-            <div class="window-chrome">
-              <span class="window-dot red" aria-hidden="true"></span>
-              <span class="window-dot yellow" aria-hidden="true"></span>
-              <span class="window-dot green" aria-hidden="true"></span>
-              <span class="window-title">panda consult</span>
+          <div class="codex-demo hero-codex-demo" aria-label="Codex using Panda skill automatically">
+            <div class="codex-demo-header">
+              <span>Codex</span>
+              <strong>native skill trigger</strong>
             </div>
-            <pre><code>$ python3 scripts/consult_ai_team.py --tool all --prompt "review this change"
-Preparing independent advisors...
-Extracting V2 contracts...
-Saved panda_contracts.v2.json
-Codex integrates. Tests decide.</code></pre>
+            <div class="codex-thread">
+              <div class="chat-bubble user-bubble">
+                <span>You</span>
+                <p>Review this implementation plan with Panda.</p>
+              </div>
+              <div class="chat-bubble codex-bubble">
+                <span>Codex</span>
+                <p>Using the Panda skill for independent review.</p>
+              </div>
+              <div class="skill-run" aria-hidden="true">
+                <span>skill matched: panda</span>
+                <span>running independent advisors</span>
+                <span>writing evidence artifacts</span>
+                <span>Codex integrates. Tests decide.</span>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -269,41 +278,28 @@ Codex integrates. Tests decide.</code></pre>
             <div class="section-header">
               <h2>Install and run</h2>
               <p class="section-intro">
-                Panda is checkout-first. Once the skill is available to Codex, natural requests like
-                "review this with Panda" trigger consultation without turning Panda into a separate app.
+                Download Panda, install the local artifact helpers, and make the skill available so Codex can
+                call it during review, planning, debugging, and implementation work.
               </p>
             </div>
             <div class="usage-grid usage-primary">
               <div class="code-panel">
                 <div class="code-panel-header">
-                  <span>Install from the source checkout</span>
+                  <span>Download and install the checkout</span>
                   <button class="copy-button" type="button" data-copy="install-command">Copy</button>
                 </div>
                 <pre id="install-command"><code>git clone https://github.com/igcodinap/panda.git
 cd panda
 python3 -m pip install -e .</code></pre>
               </div>
-              <div class="codex-demo" aria-label="Codex using Panda skill automatically">
-                <div class="codex-demo-header">
-                  <span>Codex</span>
-                  <strong>native skill trigger</strong>
-                </div>
-                <div class="codex-thread">
-                  <div class="chat-bubble user-bubble">
-                    <span>You</span>
-                    <p>Review this implementation plan with Panda.</p>
-                  </div>
-                  <div class="chat-bubble codex-bubble">
-                    <span>Codex</span>
-                    <p>Using the Panda skill for independent review.</p>
-                  </div>
-                  <div class="skill-run" aria-hidden="true">
-                    <span>skill matched: panda</span>
-                    <span>running independent advisors</span>
-                    <span>writing evidence artifacts</span>
-                    <span>Codex integrates. Tests decide.</span>
-                  </div>
-                </div>
+              <div class="setup-card">
+                <span>Set up Codex access</span>
+                <ol>
+                  <li>Open the Panda checkout in Codex or make its <code>SKILL.md</code> available as a Codex skill.</li>
+                  <li>Confirm <code>claude</code> and/or <code>opencode</code> are on PATH and authenticated.</li>
+                  <li>Ask Codex: <strong>review this with Panda</strong>.</li>
+                </ol>
+                <p>Codex remains the editor. Panda supplies independent review pressure and evidence.</p>
               </div>
             </div>
             <div class="requirements-strip" aria-label="Panda requirements">

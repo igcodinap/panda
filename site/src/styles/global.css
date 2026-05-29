@@ -397,63 +397,6 @@ select {
   text-underline-offset: 3px;
 }
 
-.hero-window {
-  width: min(760px, 100%);
-  margin-top: 46px;
-  overflow: hidden;
-  border: 1px solid var(--line-strong);
-  border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 20px 60px rgba(17, 17, 17, 0.05);
-  text-align: left;
-}
-
-.window-chrome {
-  display: flex;
-  align-items: center;
-  min-height: 42px;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--line);
-  gap: 8px;
-}
-
-.window-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-}
-
-.window-dot.red {
-  background: #ff5f57;
-}
-
-.window-dot.yellow {
-  background: #ffbd2e;
-}
-
-.window-dot.green {
-  background: #28c840;
-}
-
-.window-title {
-  margin-left: 8px;
-  color: var(--soft);
-  font-size: 0.84rem;
-}
-
-.hero-window pre {
-  padding: 18px 20px 22px;
-  color: var(--muted);
-  font-size: 0.95rem;
-  line-height: 1.7;
-  overflow-x: hidden;
-  white-space: pre-wrap;
-}
-
-.hero-window code {
-  white-space: pre-wrap;
-}
-
 .thesis-strip {
   display: grid;
   grid-template-columns: 180px minmax(0, 1fr);
@@ -533,6 +476,7 @@ select {
 .source-card,
 .code-panel,
 .codex-demo,
+.setup-card,
 .status-panel {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -640,6 +584,12 @@ select {
   box-shadow: 0 14px 38px rgba(17, 17, 17, 0.04);
 }
 
+.hero-codex-demo {
+  width: min(620px, 100%);
+  margin-top: 46px;
+  text-align: left;
+}
+
 .codex-demo-header {
   display: flex;
   align-items: center;
@@ -732,6 +682,49 @@ select {
 
 .skill-run span:nth-child(4) {
   animation-delay: 3.6s;
+}
+
+.setup-card {
+  padding: 22px;
+  border-color: var(--line-strong);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 14px 38px rgba(17, 17, 17, 0.04);
+}
+
+.setup-card > span {
+  display: block;
+  margin-bottom: 12px;
+  color: var(--soft);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.setup-card ol {
+  display: grid;
+  margin: 0;
+  padding-left: 20px;
+  gap: 10px;
+}
+
+.setup-card li {
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.setup-card p {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 0.94rem;
+  line-height: 1.45;
+}
+
+.setup-card code {
+  padding: 1px 4px;
+  border-radius: 5px;
+  background: var(--copy-surface);
+  color: var(--ink);
+  font-size: 0.88em;
 }
 
 .requirements-strip {
@@ -955,7 +948,6 @@ code {
     font-size: 1rem;
   }
 
-  .hero-window,
   .loop,
   .pill-grid,
   .thesis-strip {
@@ -1023,9 +1015,6 @@ code {
     width: 100%;
   }
 
-  .hero-window pre {
-    font-size: 0.86rem;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
