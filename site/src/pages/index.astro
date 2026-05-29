@@ -123,17 +123,26 @@ const sources = [
           <div class="hero-logo" aria-hidden="true">
             <img src={logoUrl} width="900" height="797" alt="" />
           </div>
-          <p class="eyebrow">Local MAS consultation for Codex</p>
+          <p class="eyebrow">Local consultation pressure for Codex</p>
           <h1 id="hero-title">
             panda is not a panda.
-            <span>it is a MAS system for leveraging Codex weak spots where it matters.</span>
           </h1>
+          <p class="hero-kicker">
+            it is a
+            <span
+              class="term"
+              tabindex="0"
+              data-tooltip="Multi-agent system: independent model advisors inspect one Codex task, while Codex remains the editor and integrator."
+              aria-label="MAS, multi-agent system"
+            >MAS</span>
+            system for leveraging Codex weak spots where it matters.
+          </p>
           <p class="hero-copy">
             Panda runs independent model consultations around a Codex task, extracts structured contracts,
             preserves useful disagreement, and lets Codex integrate only what survives local evidence and tests.
           </p>
           <div class="hero-command">
-            <pre id="quick-command"><code>git clone https://github.com/igcodinap/panda.git</code></pre>
+            <pre id="quick-command"><code>git clone https://github.com/igcodinap/panda</code></pre>
             <button
               class="copy-button icon-copy-button"
               type="button"
@@ -255,11 +264,11 @@ Codex integrates. Tests decide.</code></pre>
             <div class="section-header">
               <h2>Install and run</h2>
               <p class="section-intro">
-                Panda is checkout-first. The Python package installs the artifact helpers, while the runners
-                are repo-level scripts.
+                Panda is checkout-first. Once the skill is available to Codex, natural requests like
+                "review this with Panda" trigger consultation without turning Panda into a separate app.
               </p>
             </div>
-            <div class="usage-grid">
+            <div class="usage-grid usage-primary">
               <div class="code-panel">
                 <div class="code-panel-header">
                   <span>Install from the source checkout</span>
@@ -269,34 +278,41 @@ Codex integrates. Tests decide.</code></pre>
 cd panda
 python3 -m pip install -e .</code></pre>
               </div>
-              <div class="code-panel">
-                <div class="code-panel-header">
-                  <span>Run a consultation</span>
-                  <button class="copy-button" type="button" data-copy="consult-command">Copy</button>
+              <div class="codex-demo" aria-label="Codex using Panda skill automatically">
+                <div class="codex-demo-header">
+                  <span>Codex</span>
+                  <strong>native skill trigger</strong>
                 </div>
-                <pre id="consult-command"><code>python3 scripts/consult_ai_team.py \
-  --tool all \
-  --mode explore \
-  --role implementation-review \
-  --prompt "Review this plan. What risks, alternatives, and tests should Codex consider?"</code></pre>
-              </div>
-              <div class="code-panel">
-                <div class="code-panel-header">
-                  <span>Preview the runner commands</span>
-                  <button class="copy-button" type="button" data-copy="dry-run-command">Copy</button>
+                <div class="codex-thread">
+                  <div class="chat-bubble user-bubble">
+                    <span>You</span>
+                    <p>Review this implementation plan with Panda.</p>
+                  </div>
+                  <div class="chat-bubble codex-bubble">
+                    <span>Codex</span>
+                    <p>Using the Panda skill for independent review.</p>
+                  </div>
+                  <div class="skill-run" aria-hidden="true">
+                    <span>skill matched: panda</span>
+                    <span>running independent advisors</span>
+                    <span>writing evidence artifacts</span>
+                    <span>Codex integrates. Tests decide.</span>
+                  </div>
                 </div>
-                <pre id="dry-run-command"><code>python3 scripts/consult_ai_team.py \
-  --dry-run \
-  --tool all \
-  --prompt "smoke test"</code></pre>
               </div>
-              <div class="code-panel">
-                <div class="code-panel-header">
-                  <span>Verify the checkout</span>
-                  <button class="copy-button" type="button" data-copy="test-command">Copy</button>
-                </div>
-                <pre id="test-command"><code>python3 -m pytest -q -p no:rerunfailures</code></pre>
-              </div>
+            </div>
+            <div class="requirements-strip" aria-label="Panda requirements">
+              <span>Requirements</span>
+              <ul>
+                <li>Python 3.9+</li>
+                <li>Claude Code or OpenCode installed</li>
+                <li>CLI auth configured</li>
+                <li>Panda skill available to Codex</li>
+              </ul>
+              <p>
+                For full multi-advisor runs, install both Claude Code and OpenCode. Panda can still run with
+                whichever advisor CLI is available.
+              </p>
             </div>
           </div>
         </section>
