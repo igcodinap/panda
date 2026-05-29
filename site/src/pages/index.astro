@@ -133,28 +133,32 @@ const sources = [
             preserves useful disagreement, and lets Codex integrate only what survives local evidence and tests.
           </p>
           <div class="hero-command">
-            <pre id="quick-command"><code>git clone https://github.com/igcodinap/panda.git
-cd panda
-python3 -m pip install -e .</code></pre>
-            <button class="copy-button" type="button" data-copy="quick-command">Copy</button>
+            <pre id="quick-command"><code>git clone https://github.com/igcodinap/panda.git</code></pre>
+            <button
+              class="copy-button icon-copy-button"
+              type="button"
+              data-copy="quick-command"
+              aria-label="Copy install command"
+            >
+              <span class="copy-icon" aria-hidden="true"></span>
+              <span class="sr-only" data-copy-label>Copy</span>
+            </button>
           </div>
-          <div class="hero-actions">
-            <a class="button" href="#usage">Get started</a>
-            <a class="ghost-button" href={repoUrl}>GitHub</a>
-          </div>
-          <div class="hero-stat-row" aria-label="Panda principles">
-            <div class="hero-stat">
-              <strong>Independent advisors</strong>
-              <p>review without editing the working tree.</p>
+          <p class="hero-command-note">
+            paste this in terminal, or <a href="#usage">see the full runner commands</a>
+          </p>
+          <div class="hero-window" aria-label="Panda consultation preview">
+            <div class="window-chrome">
+              <span class="window-dot red" aria-hidden="true"></span>
+              <span class="window-dot yellow" aria-hidden="true"></span>
+              <span class="window-dot green" aria-hidden="true"></span>
+              <span class="window-title">panda consult</span>
             </div>
-            <div class="hero-stat">
-              <strong>Structured contracts</strong>
-              <p>turn advice into claims, risks, and checks.</p>
-            </div>
-            <div class="hero-stat">
-              <strong>Tests decide</strong>
-              <p>Codex integrates only what local evidence supports.</p>
-            </div>
+            <pre><code>$ python3 scripts/consult_ai_team.py --tool all --prompt "review this change"
+Preparing independent advisors...
+Extracting V2 contracts...
+Saved panda_contracts.v2.json
+Codex integrates. Tests decide.</code></pre>
           </div>
         </section>
 
@@ -380,14 +384,25 @@ python3 -m pip install -e .</code></pre>
           const target = targetId ? document.getElementById(targetId) : null;
           if (!target) return;
           const text = target.textContent || "";
+          const label = button.querySelector("[data-copy-label]");
+          const originalLabel = label ? label.textContent || "Copy" : button.textContent || "Copy";
+          const originalAria = button.getAttribute("aria-label");
+          const setLabel = (value) => {
+            if (label) {
+              label.textContent = value;
+              button.setAttribute("aria-label", value === originalLabel && originalAria ? originalAria : value);
+            } else {
+              button.textContent = value;
+            }
+          };
           try {
             await navigator.clipboard.writeText(text.trim());
-            button.textContent = "Copied";
+            setLabel("Copied");
             window.setTimeout(() => {
-              button.textContent = "Copy";
+              setLabel(originalLabel);
             }, 1300);
           } catch {
-            button.textContent = "Select";
+            setLabel("Select");
           }
         });
       });
