@@ -15,7 +15,7 @@ python3 -m pytest -q -p no:rerunfailures
 For runner smoke checks that do not call external models:
 
 ```bash
-python3 scripts/consult_ai_team.py --dry-run --tool all --prompt "smoke test"
+python3 scripts/consult_ai_team.py --dry-run --prompt "smoke test"
 ```
 
 ## Change Guidelines

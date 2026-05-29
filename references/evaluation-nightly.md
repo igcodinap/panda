@@ -57,6 +57,10 @@ python3 scripts/consult_ai_team.py \
   --prompt "SWE-bench task TASK_ID. Inspect the clean checkout, identify likely fix areas, risks, and verification plan. Do not edit files."
 ```
 
+This evaluation path intentionally keeps explicit legacy tool flags so benchmark
+baselines remain reproducible. Normal Codex-triggered Panda usage should use the
+config-driven path or a single one-off `--agent`.
+
 Use `--tool auto` or `--tool codex` when measuring the portable Codex-reviewer
 fallback separately from the legacy `--tool all` full-Panda baseline.
 

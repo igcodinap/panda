@@ -145,6 +145,10 @@ python3 scripts/consult_ai_team.py \
   --workspace <panda-eval-root>/YYYYMMDD-hard-local/tasks/SAFE_TASK_DIR/workspace
 ```
 
+This evaluation path intentionally keeps explicit legacy tool flags so benchmark
+baselines remain reproducible. Normal Codex-triggered Panda usage should use the
+config-driven path or a single one-off `--agent`.
+
 The prompt asks for a contract map, local test evidence, likely evaluator assertions, recommendation, alternative, risks, falsifiers, and verification plan. It must not include gold `patch`, `test_patch`, `FAIL_TO_PASS`, hidden test source, target commit details, raw commit SHAs, or hardness metadata. Use `--tool auto` or `--tool codex` for portable Codex-reviewer fallback runs; keep `--tool all` for the legacy full-Panda baseline.
 
 Read `evidence.json` and `{tool}.summary.json` first. Inspect raw logs only when necessary. Codex remains the only editor.

@@ -1,4 +1,4 @@
 interface:
   display_name: "Panda"
-  short_description: "Consult Claude Code, OpenCode GLM, OpenCode Qwen, and a Codex reviewer as Panda's collaborator cores"
-  default_prompt: "Use $panda, panda, ait, aiteam, or ai-team to get independent perspectives from Claude Code, OpenCode GLM 5.1, OpenCode Qwen 3.6 Plus, and the Codex reviewer fallback; use fast, balanced, or deep profiles, and ask for a session when a multi-turn team conversation would help."
+  short_description: "Run Panda's config-driven Codex reviewer and optional Claude/OpenCode collaborator agents"
+  default_prompt: "Use $panda, panda, ait, aiteam, or ai-team to get independent perspectives from Panda's saved behavior profile; without a config it starts with the Codex reviewer on gpt-5.5 medium, and one-off model-only runs should use a single named agent."

@@ -2259,9 +2259,14 @@ def build_agent_commands(
     return commands, json_tools
 
 
+def default_output_dir() -> Path:
+    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    suffix = uuid.uuid4().hex[:8]
+    return Path(tempfile.gettempdir()) / "panda-consults" / f"{stamp}-{suffix}"
+
+
 def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
-    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    output_dir = args.output_dir or Path(tempfile.gettempdir()) / "panda-consults" / stamp
+    output_dir = args.output_dir or default_output_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
     isolated_cwd = output_dir / "isolated-cwd"
     isolated_cwd.mkdir(exist_ok=True)

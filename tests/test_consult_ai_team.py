@@ -98,6 +98,14 @@ class ArgumentValidationTests(unittest.TestCase):
         self.assertEqual(args.protocol, "v2")
         self.assertEqual(consult_ai_team.requested_tools(args.tool), ["codex"])
 
+    def test_default_output_dir_is_unique_for_fast_parallel_invocations(self) -> None:
+        paths = [consult_ai_team.default_output_dir() for _ in range(50)]
+
+        self.assertEqual(len(paths), len(set(paths)))
+        for path in paths:
+            self.assertEqual(path.parent, Path(tempfile.gettempdir()) / "panda-consults")
+            self.assertRegex(path.name, r"^\d{8}-\d{6}-\d{6}-[0-9a-f]{8}$")
+
     def test_invalid_protocol_is_rejected(self) -> None:
         with self.assertRaises(SystemExit):
             self.parse_with(["--protocol", "v1", "--prompt", "test"])
