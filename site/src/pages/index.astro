@@ -224,7 +224,7 @@ const sources = [
             <figure class="leverage-figure">
               <svg
                 class="leverage-image"
-                viewBox="0 0 760 420"
+                viewBox="0 0 760 360"
                 role="img"
                 aria-labelledby="leverage-title leverage-desc"
               >
@@ -236,44 +236,42 @@ const sources = [
                 <defs>
                   <marker
                     id="arrowhead"
-                    markerWidth="10"
-                    markerHeight="10"
-                    refX="8"
-                    refY="5"
+                    markerWidth="8"
+                    markerHeight="8"
+                    refX="7"
+                    refY="4"
                     orient="auto"
                     markerUnits="strokeWidth"
                   >
-                    <path d="M 0 0 L 10 5 L 0 10 z"></path>
+                    <path d="M 0 0 L 8 4 L 0 8 z"></path>
                   </marker>
                 </defs>
                 <text class="diagram-title" x="32" y="42">highest leverage is upstream</text>
                 <text class="diagram-caption" x="32" y="68">Research and plan quality shape every later token.</text>
 
-                <rect class="pressure-shell" x="28" y="92" width="424" height="212" rx="24"></rect>
-                <text class="zone-label" x="52" y="128">Panda pressure zone</text>
-                <rect class="upstream-block" x="52" y="150" width="170" height="94" rx="16"></rect>
-                <text class="block-title" x="76" y="182">research</text>
-                <text class="block-copy" x="76" y="210">facts • constraints</text>
-                <text class="block-copy" x="76" y="232">unknowns</text>
-                <rect class="upstream-block" x="258" y="150" width="170" height="94" rx="16"></rect>
-                <text class="block-title" x="282" y="182">plan</text>
-                <text class="block-copy" x="282" y="210">approach • seams</text>
-                <text class="block-copy" x="282" y="232">tests</text>
+                <rect class="pressure-shell" x="28" y="88" width="424" height="184" rx="24"></rect>
+                <text class="zone-label" x="52" y="122">Panda pressure zone</text>
+                <rect class="upstream-block" x="52" y="142" width="170" height="86" rx="16"></rect>
+                <text class="block-title" x="76" y="174">research</text>
+                <text class="block-copy" x="76" y="202">facts • constraints</text>
+                <rect class="upstream-block" x="258" y="142" width="170" height="86" rx="16"></rect>
+                <text class="block-title" x="282" y="174">plan</text>
+                <text class="block-copy" x="282" y="202">approach • tests</text>
 
-                <path class="leverage-arrow" d="M452 184 C480 166 494 160 510 162" marker-end="url(#arrowhead)"></path>
+                <path class="leverage-arrow" d="M452 176 C478 158 494 158 510 170" marker-end="url(#arrowhead)"></path>
 
-                <rect class="downstream-block" x="510" y="126" width="220" height="118" rx="18"></rect>
-                <text class="block-title" x="538" y="164">implementation</text>
-                <text class="block-copy" x="538" y="193">Codex writes</text>
-                <text class="block-copy" x="538" y="215">the diff</text>
+                <rect class="downstream-block" x="510" y="116" width="220" height="108" rx="18"></rect>
+                <text class="block-title" x="538" y="153">implementation</text>
+                <text class="block-copy" x="538" y="181">Codex writes</text>
+                <text class="block-copy" x="538" y="202">the diff</text>
 
-                <rect class="check-block" x="126" y="324" width="508" height="70" rx="18"></rect>
-                <text class="check-title" x="154" y="354">after coding: consistency check</text>
-                <text class="check-copy" x="154" y="378">does the diff still match the research, plan, and tests?</text>
-                <path class="check-arrow" d="M618 244 C656 292 650 320 634 340" marker-end="url(#arrowhead)"></path>
-                <path class="return-arrow" d="M126 356 C72 338 52 314 64 290" marker-end="url(#arrowhead)"></path>
-                <text class="leverage-note" x="52" y="274">wrong research → wrong problem</text>
-                <text class="leverage-note" x="52" y="294">weak plan → wrong solution</text>
+                <rect class="check-block" x="126" y="294" width="508" height="58" rx="18"></rect>
+                <text class="check-title" x="154" y="320">after coding: consistency check</text>
+                <text class="check-copy" x="154" y="342">does the diff still match the research, plan, and tests?</text>
+                <path class="check-arrow" d="M622 224 C648 248 648 272 632 294" marker-end="url(#arrowhead)"></path>
+                <path class="return-arrow" d="M126 324 C84 322 54 306 42 282 C30 258 24 238 30 224" marker-end="url(#arrowhead)"></path>
+                <text class="leverage-note" x="52" y="246">wrong research → wrong problem</text>
+                <text class="leverage-note" x="52" y="266">weak plan → wrong solution</text>
               </svg>
             </figure>
             <div class="fit-points">
@@ -283,14 +281,6 @@ const sources = [
                 <p>
                   Panda spends extra model attention before Codex writes code, where a wrong read or weak plan
                   can cascade into much larger implementation waste.
-                </p>
-              </div>
-              <div class="fit-point">
-                <span>before coding</span>
-                <strong>Pressure-test the path</strong>
-                <p>
-                  Independent advisors look for missing constraints, misunderstood systems, risky boundaries,
-                  and tests that should exist before implementation starts.
                 </p>
               </div>
               <div class="fit-point">
