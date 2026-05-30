@@ -394,6 +394,7 @@ class ProfileResolutionTests(unittest.TestCase):
         self.assertEqual(Path(command[0]).name, "codex")
         self.assertEqual(command[1:4], ["--ask-for-approval", "never", "exec"])
         self.assertIn("--ephemeral", command)
+        self.assertNotIn("--skip-git-repo-check", command)
         self.assertIn("--sandbox", command)
         self.assertIn("read-only", command)
         self.assertIn("--model", command)
@@ -401,6 +402,40 @@ class ProfileResolutionTests(unittest.TestCase):
         self.assertIn("-c", command)
         self.assertIn('model_reasoning_effort="medium"', command)
         self.assertEqual(args.profile_resolution["applied_effort"]["codex"], "medium")
+
+    def test_codex_advisory_command_skips_git_repo_check(self) -> None:
+        args = self.parse_with([
+            "--tool",
+            "codex",
+            "--mode",
+            "advisory",
+            "--prompt",
+            "test",
+        ])
+
+        commands, _ = consult_ai_team.build_commands(args, "prompt", Path("/tmp/isolated-cwd"))
+
+        command = commands["codex"]
+        self.assertIn("--skip-git-repo-check", command)
+        self.assertLess(command.index("exec"), command.index("--skip-git-repo-check"))
+        self.assertLess(command.index("--skip-git-repo-check"), command.index("--ephemeral"))
+
+    def test_codex_agent_advisory_command_skips_git_repo_check(self) -> None:
+        args = self.parse_with([
+            "--agent",
+            "reviewer=codex:gpt-5.5",
+            "--mode",
+            "advisory",
+            "--prompt",
+            "test",
+        ])
+
+        commands, _ = consult_ai_team.build_commands(args, "prompt", Path("/tmp/isolated-cwd"))
+
+        command = commands["reviewer"]
+        self.assertIn("--skip-git-repo-check", command)
+        self.assertLess(command.index("exec"), command.index("--skip-git-repo-check"))
+        self.assertLess(command.index("--skip-git-repo-check"), command.index("--ephemeral"))
 
     def test_codex_model_and_effort_flags_override_defaults(self) -> None:
         args = self.parse_with([

@@ -2276,6 +2276,8 @@ def build_commands(
             "-C",
             str(run_cwd),
         ]
+        if args.mode == "advisory":
+            codex_command.insert(codex_command.index("--ephemeral"), "--skip-git-repo-check")
         codex_model = profile_resolution["effective_models"]["codex"]
         codex_effort = profile_resolution["effective_effort"]["codex"]
         if codex_model:
@@ -2384,6 +2386,8 @@ def build_agent_commands(
                 "--model",
                 model,
             ]
+            if args.mode == "advisory":
+                command.insert(command.index("--ephemeral"), "--skip-git-repo-check")
             if effort:
                 command.extend(["-c", f'model_reasoning_effort="{effort}"'])
             record_codex_effort(args, effort)
