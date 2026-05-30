@@ -26,19 +26,23 @@ where a single local inspection is enough.
 Prerequisites:
 
 - Python 3.9 or newer.
-- Minimum: `codex` on `PATH`, or set `CODEX_BIN`. With only Codex available,
-  Panda runs the portable Codex reviewer on `gpt-5.5` with `medium` reasoning.
 - Optional advisor source: `claude` on `PATH`, or set `CLAUDE_BIN`, when you
   want Panda to spawn Claude Code agents.
 - Optional advisor source: `opencode` on `PATH`, or set `OPENCODE_BIN`, when
   you want Panda to spawn OpenCode-backed agents such as Kimi, GLM, or Qwen.
+- Optional Codex reviewer source: `codex` on `PATH`, or set `CODEX_BIN`, when
+  you explicitly approve sending Panda review context to the Codex backend.
 - Local authentication configured for every CLI you ask Panda to run.
 - The Panda skill available to Codex, or the Panda checkout opened directly in
   Codex for repository-local use.
 
-Claude Code and OpenCode are not required for the base install. They add more
-independent review pressure when configured, but the default no-config path is
-intentionally Codex-only so a fresh checkout can still use Panda.
+Live Codex reviewer runs require `--privacy-mode advisory-summary` for
+summary-only review, `--privacy-mode full-context` for approved repository
+context review, `--allow-codex-reviewer`, or `PANDA_ALLOW_CODEX_REVIEWER=1`
+because they can export the selected Panda prompt/context to the Codex backend.
+For private or tenant-restricted workspaces, use
+`--privacy-mode advisory-summary --mode advisory` with a Codex-prepared summary
+or skip external consultation.
 
 ROI recommendation: once Panda becomes part of regular Codex work, the first
 optional paid add-on we recommend is OpenCode Go alongside Codex. As of
@@ -52,8 +56,9 @@ https://opencode.ai/go and https://dev.opencode.ai/docs/go/.
 Codex-facing Panda use has two model-selection paths:
 
 1. **Config-driven**: run Panda without model-selection flags. Panda loads the
-   user config file, and if no config exists it runs Codex `gpt-5.5` with
-   `medium` reasoning.
+   user config file. If no config exists, dry-runs can preview the portable
+   Codex reviewer default, but live execution stops until Codex reviewer export
+   is explicitly approved.
 2. **One-off single model**: when the user says to run Panda only with a
    specific model, pass exactly one `--agent name=backend:model[@effort]`.
 
@@ -74,6 +79,29 @@ python3 scripts/consult_ai_team.py \
   --prompt "Review this plan with Claude only."
 ```
 
+For private or tenant-restricted uncommitted code review, use a summary-only
+advisory lane. Codex prepares the summary locally and excludes raw code, raw
+diffs, secrets, credentials, and private logs:
+
+```bash
+python3 scripts/consult_ai_team.py \
+  --mode advisory \
+  --role code-review \
+  --privacy-mode advisory-summary \
+  --prompt-file /path/to/codex-prepared-summary.txt
+```
+
+For a public or otherwise approved workspace where the Codex reviewer is
+allowed:
+
+```bash
+python3 scripts/consult_ai_team.py \
+  --privacy-mode full-context \
+  --allow-codex-reviewer \
+  --agent codex=codex:gpt-5.5@medium \
+  --prompt "Review this plan with the Codex reviewer."
+```
+
 To remember a Panda default for future runs, save an explicit behavior profile.
 This stores the named agents Panda should spawn outside the repo; OpenCode is
 recorded as a backend, so Kimi, GLM, Qwen, or any other OpenCode model can be
@@ -92,9 +120,11 @@ that request into `--save-preferences`, write the user-scoped file at
 `~/.config/panda/preferences.json` unless overridden, and rely on Panda's
 automatic smoke test before treating the update as valid.
 
-Plain Panda runs then spawn those configured agents. A one-off single `--agent`
-run overrides the saved profile for that invocation. Inspect or clear preferences
-with `--show-preferences` and `--reset-preferences`; bypass them for one
+Plain Panda runs then spawn those configured agents. Without a saved profile,
+live Panda stops before launching the Codex reviewer unless explicit export
+approval is provided. A one-off single `--agent` run overrides the saved profile
+for that invocation. Inspect or clear preferences with `--show-preferences` and
+`--reset-preferences`; bypass them for one
 invocation with `--ignore-preferences` or `PANDA_NO_PREFERENCES=1`. Older
 slot-style preference files are still loaded for compatibility, but new saved
 preferences are written as the single `profile.agents` behavior shape. Every
@@ -131,8 +161,8 @@ to open a localhost socket in restricted environments.
 
 1. Codex gathers task context and decides whether consultation is worth the
    overhead.
-2. Panda runs the Codex reviewer by default, and can add Claude Code,
-   OpenCode GLM, OpenCode Qwen, or other named agents as independent advisors.
+2. Panda runs the configured advisor profile. The Codex reviewer is available
+   only when explicitly approved for live context export.
 3. Advisors inspect and report; they do not own the working tree.
 4. Panda writes compact evidence artifacts.
 5. Codex reads the evidence, accepts or rejects advice, edits code, and verifies
@@ -195,6 +225,12 @@ when coordination cost, token budgets, and verification quality are controlled.
 - Panda adds latency and model cost, so it should be reserved for tasks where
   independent pressure is likely to pay for itself.
 - Collaborator outputs are advice, not ground truth.
+- Live Codex reviewer execution is opt-in because it can export private
+  workspace context to the Codex backend.
+- Full-context `explore` code review is guarded for all external collaborators;
+  use `--privacy-mode advisory-summary --mode advisory` when only a bounded
+  summary should leave Codex. Summary mode uses an isolated working directory,
+  but it is not an OS-level filesystem sandbox.
 - Benchmark results are still exploratory and contamination-sensitive.
 - Claude/OpenCode/Codex availability, rate limits, and local CLI state can
   affect runs.

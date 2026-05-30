@@ -22,6 +22,16 @@ Include:
 
 - Do not paste secrets, tokens, private credentials, customer data, or
   unnecessary proprietary context into Panda prompts.
+- Treat the Codex reviewer as an external export path. Live Codex reviewer
+  execution requires `--privacy-mode advisory-summary` for summary-only review,
+  `--privacy-mode full-context` for approved repository-context review,
+  `--allow-codex-reviewer`, or `PANDA_ALLOW_CODEX_REVIEWER=1`; use full-context
+  only when the workspace is approved for repository context, diff, and
+  test-output export to the Codex backend.
+- For private code review, prefer `--privacy-mode advisory-summary --mode
+  advisory` with a Codex-prepared summary. Full-context `explore` code review
+  with external collaborators requires `--privacy-mode full-context` or
+  `PANDA_ALLOW_PRIVATE_CONTEXT_EXPORT=1`.
 - Review raw logs and patches before publishing them.
 - Prefer compact evidence summaries over raw transcripts.
 - Use no-`.git` benchmark workspaces when contamination or provenance matters.

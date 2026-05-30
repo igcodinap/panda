@@ -165,7 +165,7 @@ tool output starts here
         self.assertIn("unterminated_fence_recovered", report["warnings"])
         self.assertIn("extracted_via_wrapper", report["warnings"])
 
-    def test_malformed_label_line_regex_json_has_no_claims(self) -> None:
+    def test_invalid_regex_escape_recovers_with_warning(self) -> None:
         text = """```json
 panda_contracts_v2
 {"claims":[{"claim":"regex r'^[\\w.@+-]+$'","status":"confirmed","evidence_refs":["django/contrib/auth/validators.py:10"]}],"files_inspected":["django/contrib/auth/validators.py"]}
@@ -173,14 +173,62 @@ panda_contracts_v2
 
         report = contract_report_from_text("opencode", text)
 
-        self.assertEqual(report["parse_status"], "malformed")
-        self.assertEqual(report["claims"], [])
+        self.assertEqual(report["parse_status"], "parsed")
+        self.assertEqual(report["claims"][0]["claim"], "regex r'^[\\w.@+-]+$'")
         malformed = next(warning for warning in report["warnings"] if "malformed_json" in warning)
         self.assertIn("Invalid \\escape", malformed)
         self.assertIn("line=", malformed)
         self.assertIn("column=", malformed)
         self.assertIn("snippet=", malformed)
         self.assertIn("\\\\w", malformed)
+        self.assertIn("recovered_invalid_json_escape", report["warnings"])
+        self.assertIn("recovered_invalid_json_escape_count:1", report["warnings"])
+
+    def test_invalid_unicode_escape_recovers_with_warning(self) -> None:
+        text = r"""```panda_contracts_v2
+{"claims":[{"claim":"path C:\users\me\project","status":"confirmed","evidence_refs":["C:\users\me\project\zile.py"]}],"files_inspected":["C:\users\me\project\zile.py"]}
+```"""
+
+        report = contract_report_from_text("opencode", text)
+
+        self.assertEqual(report["parse_status"], "parsed")
+        self.assertEqual(report["claims"][0]["claim"], r"path C:\users\me\project")
+        self.assertEqual(report["claims"][0]["evidence_refs"], [r"C:\users\me\project\zile.py"])
+        self.assertEqual(report["files_inspected"], [r"C:\users\me\project\zile.py"])
+        self.assertIn("recovered_invalid_json_escape", report["warnings"])
+
+    def test_valid_json_escapes_are_not_marked_recovered(self) -> None:
+        text = """```panda_contracts_v2
+{"claims":[{"claim":"line one\\nline two and snowman \\u2603","status":"confirmed","evidence_refs":[]}],"files_inspected":[]}
+```"""
+
+        report = contract_report_from_text("opencode", text)
+
+        self.assertEqual(report["parse_status"], "parsed")
+        self.assertEqual(report["claims"][0]["claim"], "line one\nline two and snowman \u2603")
+        self.assertNotIn("recovered_invalid_json_escape", report["warnings"])
+
+    def test_literal_double_backslash_escape_is_not_marked_recovered(self) -> None:
+        text = r"""```panda_contracts_v2
+{"claims":[{"claim":"literal \\n stays two characters","status":"confirmed","evidence_refs":[]}],"files_inspected":[]}
+```"""
+
+        report = contract_report_from_text("opencode", text)
+
+        self.assertEqual(report["parse_status"], "parsed")
+        self.assertEqual(report["claims"][0]["claim"], r"literal \n stays two characters")
+        self.assertNotIn("recovered_invalid_json_escape", report["warnings"])
+
+    def test_truncated_unicode_escape_recovers_as_literal_text(self) -> None:
+        text = r"""```panda_contracts_v2
+{"claims":[{"claim":"truncated \uXX escape","status":"confirmed","evidence_refs":[]}],"files_inspected":[]}
+```"""
+
+        report = contract_report_from_text("opencode", text)
+
+        self.assertEqual(report["parse_status"], "parsed")
+        self.assertEqual(report["claims"][0]["claim"], r"truncated \uXX escape")
+        self.assertIn("recovered_invalid_json_escape", report["warnings"])
 
     def test_protocol_v2_prompts_request_json_self_validation(self) -> None:
         contract_prompt = protocol_v2_return_addendum("implementation-review")
@@ -266,13 +314,14 @@ panda_contracts_v2
 
             quality = info["artifact"]["parse_quality"]
             self.assertEqual(quality["reports_total"], 3)
-            self.assertEqual(quality["parsed"], 2)
-            self.assertEqual(quality["malformed"], 1)
+            self.assertEqual(quality["parsed"], 3)
+            self.assertEqual(quality["malformed"], 0)
             self.assertEqual(quality["missing"], 0)
-            self.assertEqual(quality["fallback_parsed"], 1)
-            self.assertEqual(quality["fallback_counts"]["extracted_via_label_line"], 1)
-            self.assertEqual(quality["claims_total"], 2)
-            self.assertEqual(quality["reports_with_claims"], 2)
+            self.assertEqual(quality["fallback_parsed"], 2)
+            self.assertEqual(quality["fallback_counts"]["extracted_via_label_line"], 2)
+            self.assertEqual(quality["fallback_counts"]["recovered_invalid_json_escape"], 1)
+            self.assertEqual(quality["claims_total"], 3)
+            self.assertEqual(quality["reports_with_claims"], 3)
 
     def test_contract_sidecar_replaces_without_merging_existing_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

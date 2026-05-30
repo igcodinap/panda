@@ -29,6 +29,7 @@ FALLBACK_WARNING_NAMES = frozenset({
     "extracted_via_wrapper",
     "extracted_via_unnamed_contract_shape",
     "extracted_via_unnamed_falsifier_shape",
+    "recovered_invalid_json_escape",
     "unterminated_fence_recovered",
 })
 

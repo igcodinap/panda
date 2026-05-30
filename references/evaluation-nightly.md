@@ -61,8 +61,10 @@ This evaluation path intentionally keeps explicit legacy tool flags so benchmark
 baselines remain reproducible. Normal Codex-triggered Panda usage should use the
 config-driven path or a single one-off `--agent`.
 
-Use `--tool auto` or `--tool codex` when measuring the portable Codex-reviewer
-fallback separately from the legacy `--tool all` full-Panda baseline.
+Use `--tool auto` or `--tool codex` with `--privacy-mode full-context` and
+`--allow-codex-reviewer` only when measuring the portable Codex-reviewer
+fallback in an approved benchmark workspace. Keep that separate from the legacy
+`--tool all` full-Panda baseline.
 
 Read `evidence.json` and `{tool}.summary.json` first. Inspect raw logs only when needed.
 

@@ -96,7 +96,124 @@ class ArgumentValidationTests(unittest.TestCase):
         args = self.parse_with(["--prompt", "test"])
         self.assertEqual(args.tool, "codex")
         self.assertEqual(args.protocol, "v2")
+        self.assertEqual(args.privacy_mode, "normal")
         self.assertEqual(consult_ai_team.requested_tools(args.tool), ["codex"])
+
+    def test_advisory_summary_privacy_mode_requires_advisory(self) -> None:
+        with self.assertRaises(SystemExit):
+            self.parse_with([
+                "--privacy-mode",
+                "advisory-summary",
+                "--mode",
+                "explore",
+                "--prompt",
+                "test",
+            ])
+
+        args = self.parse_with([
+            "--privacy-mode",
+            "advisory-summary",
+            "--mode",
+            "advisory",
+            "--prompt",
+            "test",
+        ])
+        self.assertEqual(args.privacy_mode, "advisory-summary")
+
+    def test_live_codex_reviewer_requires_explicit_export_approval(self) -> None:
+        args = self.parse_with(["--prompt", "test"])
+
+        self.assertEqual(consult_ai_team.selected_codex_reviewers(args), ["codex"])
+        with self.assertRaisesRegex(SystemExit, "requires explicit export approval"):
+            consult_ai_team.enforce_codex_reviewer_export_policy(args)
+
+        dry_run_args = self.parse_with(["--dry-run", "--prompt", "test"])
+        consult_ai_team.enforce_codex_reviewer_export_policy(dry_run_args)
+
+        cli_allowed_args = self.parse_with(["--allow-codex-reviewer", "--prompt", "test"])
+        consult_ai_team.enforce_codex_reviewer_export_policy(cli_allowed_args)
+
+        full_context_args = self.parse_with(["--privacy-mode", "full-context", "--prompt", "test"])
+        consult_ai_team.enforce_codex_reviewer_export_policy(full_context_args)
+
+        summary_args = self.parse_with([
+            "--privacy-mode",
+            "advisory-summary",
+            "--mode",
+            "advisory",
+            "--prompt",
+            "summary only",
+        ])
+        consult_ai_team.enforce_codex_reviewer_export_policy(summary_args)
+
+        env_allowed_args = self.parse_with(
+            ["--prompt", "test"],
+            {"PANDA_ALLOW_CODEX_REVIEWER": "1"},
+        )
+        with patch.dict(os.environ, {"PANDA_ALLOW_CODEX_REVIEWER": "1"}):
+            consult_ai_team.enforce_codex_reviewer_export_policy(env_allowed_args)
+
+    def test_full_context_code_review_requires_explicit_privacy_mode(self) -> None:
+        args = self.parse_with([
+            "--tool",
+            "opencode",
+            "--role",
+            "code-review",
+            "--mode",
+            "explore",
+            "--prompt",
+            "review current diff",
+        ])
+        with self.assertRaisesRegex(SystemExit, "Full-context Panda code review"):
+            consult_ai_team.enforce_private_context_export_policy(args)
+
+        advisory_args = self.parse_with([
+            "--tool",
+            "opencode",
+            "--role",
+            "code-review",
+            "--mode",
+            "advisory",
+            "--privacy-mode",
+            "advisory-summary",
+            "--prompt",
+            "review this summary",
+        ])
+        consult_ai_team.enforce_private_context_export_policy(advisory_args)
+
+        full_context_args = self.parse_with([
+            "--tool",
+            "opencode",
+            "--role",
+            "code-review",
+            "--mode",
+            "explore",
+            "--privacy-mode",
+            "full-context",
+            "--prompt",
+            "review current diff",
+        ])
+        consult_ai_team.enforce_private_context_export_policy(full_context_args)
+
+    def test_codex_reviewer_export_policy_handles_named_agents(self) -> None:
+        opencode_args = self.parse_with([
+            "--agent",
+            "glm=opencode:opencode-go/glm-5.1",
+            "--prompt",
+            "test",
+        ])
+        self.assertEqual(consult_ai_team.selected_codex_reviewers(opencode_args), [])
+        consult_ai_team.enforce_codex_reviewer_export_policy(opencode_args)
+
+        codex_args = self.parse_with([
+            "--agent",
+            "reviewer=codex:gpt-5.5",
+            "--prompt",
+            "test",
+        ])
+        self.assertEqual(consult_ai_team.selected_codex_reviewers(codex_args), ["reviewer"])
+        with self.assertRaisesRegex(SystemExit, "Selected Codex reviewer: reviewer"):
+            consult_ai_team.enforce_codex_reviewer_export_policy(codex_args)
 
     def test_default_output_dir_is_unique_for_fast_parallel_invocations(self) -> None:
         paths = [consult_ai_team.default_output_dir() for _ in range(50)]
@@ -969,6 +1086,20 @@ class PromptCompatibilityTests(unittest.TestCase):
         self.assertIn("panda_contracts_v2", prompt)
         self.assertIn("Double-escape regex or path backslashes", prompt)
         self.assertIn("Do not invoke Panda", prompt)
+        self.assertIn("Privacy mode: normal", prompt)
+
+    def test_advisory_summary_prompt_adds_privacy_guidance(self) -> None:
+        prompt = consult_ai_team.consultation_prompt(
+            "advisory",
+            "code-review",
+            "unsupervised",
+            "Review this summary.",
+            privacy_mode="advisory-summary",
+        )
+
+        self.assertIn("Privacy mode: advisory-summary", prompt)
+        self.assertIn("reviewing a Codex-prepared summary", prompt)
+        self.assertIn("Do not ask for raw code", prompt)
 
 
 class ManifestTests(unittest.TestCase):
@@ -995,10 +1126,53 @@ class ManifestTests(unittest.TestCase):
 
             manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["tool"], "codex")
+            self.assertEqual(manifest["privacy_mode"], "normal")
             self.assertEqual(manifest["requested_tools"], ["codex"])
             self.assertEqual(manifest["active_models"], {"codex": consult_ai_team.DEFAULT_CODEX_MODEL})
             self.assertEqual(manifest["applied_effort"]["codex"], consult_ai_team.DEFAULT_CODEX_EFFORT)
             self.assertEqual([tool["tool"] for tool in manifest["tools"]], ["codex"])
+
+    def test_advisory_summary_manifest_uses_isolated_cwd(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "out"
+            workspace = Path(tmpdir) / "workspace"
+            workspace.mkdir()
+            args = self.parse_with([
+                "--tool",
+                "opencode",
+                "--dry-run",
+                "--mode",
+                "advisory",
+                "--role",
+                "code-review",
+                "--privacy-mode",
+                "advisory-summary",
+                "--workspace",
+                str(workspace),
+                "--output-dir",
+                str(output_dir),
+                "--prompt",
+                "High-level summary only.",
+            ])
+            prompt = consult_ai_team.consultation_prompt(
+                args.mode,
+                args.role,
+                args.approval_mode,
+                "High-level summary only.",
+                args.protocol,
+                args.privacy_mode,
+            )
+
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_one_shot(args, prompt)
+
+            manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["privacy_mode"], "advisory-summary")
+            self.assertEqual(manifest["mode"], "advisory")
+            self.assertEqual(manifest["workspace"], str(workspace.resolve()))
+            self.assertEqual(manifest["run_cwd"], str(output_dir / "isolated-cwd"))
+            command = manifest["tools"][0]["command"]
+            self.assertNotIn("--dangerously-skip-permissions", command)
 
     def test_one_shot_manifest_includes_profile_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -2050,6 +2224,38 @@ class SessionTests(unittest.TestCase):
 
             manifest = json.loads((session_dir / "turns" / "001" / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["mode"], "explore")
+            self.assertEqual(manifest["privacy_mode"], "normal")
+
+    def test_session_inherits_privacy_mode_from_session_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session_dir = Path(tmpdir) / "summary-session"
+            session_dir.mkdir()
+            consult_ai_team.write_json(session_dir / "session.json", {
+                "schema_version": consult_ai_team.SCHEMA_VERSION,
+                "session_id": "summary-session",
+                "status": "waiting_for_user",
+                "turn_count": 0,
+                "tool": "claude",
+                "mode": "advisory",
+                "role": "code-review",
+                "privacy_mode": "advisory-summary",
+            })
+            args = self.parse_with([
+                "--session",
+                "summary-session",
+                "--session-dir",
+                tmpdir,
+                "--dry-run",
+                "--prompt",
+                "test",
+            ])
+
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_session(args, "test")
+
+            manifest = json.loads((session_dir / "turns" / "001" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["mode"], "advisory")
+            self.assertEqual(manifest["privacy_mode"], "advisory-summary")
 
     def test_session_command_construction_uses_native_sessions(self) -> None:
         args = self.parse_with(["--session", "--tool", "all", "--prompt", "test"])

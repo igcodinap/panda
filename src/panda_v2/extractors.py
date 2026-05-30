@@ -20,6 +20,8 @@ FENCE_RE = re.compile(r"```(?P<label>[A-Za-z0-9_-]+)?\s*\n(?P<body>.*?)\n```", r
 OPEN_FENCE_RE = re.compile(r"```(?P<label>[A-Za-z0-9_-]+)?\s*\n")
 TOOL_OUTPUT_MARKERS = ("\n[stderr]", "\n[stdout]", "\n[status]")
 MALFORMED_SNIPPET_RADIUS = 40
+HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
+VALID_SIMPLE_JSON_ESCAPES = frozenset({'"', "\\", "/", "b", "f", "n", "r", "t"})
 
 
 def fenced_blocks(text: str, fence_name: str) -> list[str]:
@@ -70,11 +72,68 @@ def malformed_json_warning(body: str, exc: json.JSONDecodeError) -> str:
     )
 
 
+def can_recover_invalid_json_escape(exc: json.JSONDecodeError) -> bool:
+    return exc.msg in {"Invalid \\escape", "Invalid \\uXXXX escape"}
+
+
+def recover_invalid_json_escapes(body: str) -> tuple[str, int]:
+    output: list[str] = []
+    in_string = False
+    escaping = False
+    repaired = 0
+
+    for idx, char in enumerate(body):
+        if not in_string:
+            output.append(char)
+            if char == '"':
+                in_string = True
+            continue
+
+        if escaping:
+            if char == "u":
+                digits = body[idx + 1:idx + 5]
+                valid_escape = len(digits) == 4 and all(
+                    digit in HEX_DIGITS for digit in digits
+                )
+            else:
+                valid_escape = char in VALID_SIMPLE_JSON_ESCAPES
+            if not valid_escape:
+                output.append("\\")
+                repaired += 1
+            output.append(char)
+            escaping = False
+            continue
+
+        output.append(char)
+        if char == "\\":
+            escaping = True
+        elif char == '"':
+            in_string = False
+
+    return "".join(output), repaired
+
+
 def json_loads_or_malformed(body: str, warnings: list[str]) -> tuple[Any | None, str, list[str]]:
     try:
         return json.loads(body), "parsed", warnings
     except json.JSONDecodeError as exc:
-        return None, "malformed", warnings + [malformed_json_warning(body, exc)]
+        malformed_warning = malformed_json_warning(body, exc)
+        if can_recover_invalid_json_escape(exc):
+            recovered_body, repaired = recover_invalid_json_escapes(body)
+            if repaired:
+                try:
+                    return json.loads(recovered_body), "parsed", warnings + [
+                        malformed_warning,
+                        "recovered_invalid_json_escape",
+                        f"recovered_invalid_json_escape_count:{repaired}",
+                    ]
+                except json.JSONDecodeError as recovered_exc:
+                    return None, "malformed", warnings + [
+                        malformed_warning,
+                        "invalid_json_escape_recovery_failed",
+                        malformed_json_warning(recovered_body, recovered_exc),
+                    ]
+        return None, "malformed", warnings + [malformed_warning]
 
 
 def unwrap_named_payload(payload: Any, fence_name: str) -> tuple[Any, list[str]]:

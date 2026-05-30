@@ -50,8 +50,25 @@ DEFAULT_QWEN_MODEL = "opencode-go/qwen3.6-plus"
 DEFAULT_CODEX_MODEL = "gpt-5.5"
 DEFAULT_CODEX_EFFORT = "medium"
 DEFAULT_APPROVAL_MODE = "unsupervised"
+CODEX_REVIEWER_EXPORT_MESSAGE = (
+    "Codex reviewer execution requires explicit export approval because it can send the "
+    "Panda prompt, repository context, uncommitted diff details, and test output to the "
+    "Codex backend. Pass --privacy-mode advisory-summary for summary-only review, "
+    "--privacy-mode full-context for approved repository-context review, "
+    "--allow-codex-reviewer, or set PANDA_ALLOW_CODEX_REVIEWER=1 only when the "
+    "selected context is approved for that export."
+)
+PRIVATE_CONTEXT_EXPORT_MESSAGE = (
+    "Full-context Panda code review can export the prompt, repository files, uncommitted "
+    "diff details, and test output to external collaborator CLIs. For private changes, "
+    "prefer --privacy-mode advisory-summary with --mode advisory and a Codex-prepared "
+    "summary that excludes raw code, diffs, secrets, and logs. Use --privacy-mode "
+    "full-context or set PANDA_ALLOW_PRIVATE_CONTEXT_EXPORT=1 only when this workspace "
+    "is approved for external code review."
+)
 EXECUTION_CHOICES = ("auto", "parallel", "sequential")
 APPROVAL_MODE_CHOICES = ("unsupervised", "supervised")
+PRIVACY_MODE_CHOICES = ("normal", "advisory-summary", "full-context")
 CLAUDE_EFFORT_CHOICES = ("low", "medium", "high", "xhigh", "max")
 CODEX_EFFORT_CHOICES = ("low", "medium", "high", "xhigh")
 LEGACY_ALL_TOOLS = ("claude", "opencode", "qwen")
@@ -152,6 +169,7 @@ EXPLICIT_ARG_FLAGS = {
     "--approval-mode": "approval_mode",
     "--role": "role",
     "--protocol": "protocol",
+    "--privacy-mode": "privacy_mode",
     "--profile": "profile",
     "--claude-model": "claude_model",
     "--claude-effort": "claude_effort",
@@ -214,6 +232,17 @@ def parse_args() -> argparse.Namespace:
         help="Artifact/prompt protocol. V2 is the formal Panda flow and writes contract sidecars.",
     )
     parser.add_argument(
+        "--privacy-mode",
+        choices=PRIVACY_MODE_CHOICES,
+        default="normal",
+        help=(
+            "Control how much private workspace context Panda may expose. "
+            "'advisory-summary' requires --mode advisory and reviews only the supplied summary "
+            "from an isolated directory. 'full-context' explicitly allows external agents to "
+            "inspect repository context."
+        ),
+    )
+    parser.add_argument(
         "--profile",
         choices=sorted(MODEL_PROFILES),
         help="Model/effort profile. Defaults from --role unless explicitly provided.",
@@ -261,6 +290,14 @@ def parse_args() -> argparse.Namespace:
         "--codex-effort",
         choices=CODEX_EFFORT_CHOICES,
         help=f"Codex reviewer reasoning effort. Defaults through profile/env to {DEFAULT_CODEX_EFFORT}.",
+    )
+    parser.add_argument(
+        "--allow-codex-reviewer",
+        action="store_true",
+        help=(
+            "Allow live Codex reviewer execution. This can export prompt, repository context, "
+            "diff details, and test output to the Codex backend."
+        ),
     )
     parser.add_argument(
         "--agent",
@@ -316,12 +353,15 @@ def parse_args() -> argparse.Namespace:
         parser.error("Use either --agent or --tool, not both.")
     validate_choice(parser, "AI_TEAM_EXECUTION/--execution", args.execution, EXECUTION_CHOICES)
     validate_choice(parser, "AI_TEAM_APPROVAL_MODE/--approval-mode", args.approval_mode, APPROVAL_MODE_CHOICES)
+    validate_choice(parser, "--privacy-mode", args.privacy_mode, PRIVACY_MODE_CHOICES)
     env_codex_effort = os.environ.get("CODEX_REASONING_EFFORT") or os.environ.get("CODEX_EFFORT")
     if args.codex_effort is None and env_codex_effort:
         validate_choice(parser, "CODEX_REASONING_EFFORT/CODEX_EFFORT", env_codex_effort, CODEX_EFFORT_CHOICES)
     if args.mode == PATCH_MODE:
         parser.error(PATCH_MODE_DISABLED_MESSAGE)
     validate_choice(parser, "--mode", args.mode, MODE_GUIDANCE)
+    if args.privacy_mode == "advisory-summary" and args.mode != "advisory":
+        parser.error("--privacy-mode advisory-summary requires --mode advisory.")
     if args.straggler_timeout < 1:
         parser.error("--straggler-timeout must be at least 1 second.")
     if args.timeout < 1:
@@ -806,6 +846,7 @@ def smoke_preferences_payload(args: argparse.Namespace, preferences: dict) -> di
         smoke_args.approval_mode,
         "Panda saved-preferences smoke test.",
         smoke_args.protocol,
+        smoke_args.privacy_mode,
     )
     commands, _ = build_commands(smoke_args, prompt, smoke_args.workspace.resolve())
     if not commands:
@@ -1041,26 +1082,49 @@ def read_prompt(args: argparse.Namespace) -> str:
     return prompt
 
 
+def privacy_mode_guidance(privacy_mode: str) -> str:
+    if privacy_mode == "advisory-summary":
+        return """
+Privacy guidance:
+- You are reviewing a Codex-prepared summary, not the raw repository, raw diff, raw logs, secrets, or credentials.
+- Do not ask for raw code, complete diffs, private logs, secrets, credentials, or workspace access.
+- Treat exact implementation details that are not present in the summary as unverifiable.
+- Focus on conceptual bugs, missing tests, edge cases, and questions Codex should verify locally.
+"""
+    if privacy_mode == "full-context":
+        return """
+Privacy guidance:
+- The caller explicitly allowed full-context review. Use repository evidence carefully and avoid copying large source excerpts into your response.
+"""
+    return ""
+
+
 def consultation_prompt(
     mode: str,
     role: str,
     approval_mode: str,
     user_prompt: str,
     protocol: str = "v2",
+    privacy_mode: str = "normal",
 ) -> str:
     reject_disabled_mode(mode)
     if mode not in MODE_GUIDANCE:
         raise SystemExit(f"--mode must be one of: {', '.join(sorted(MODE_GUIDANCE))}")
     if protocol != "v2":
         raise SystemExit("Panda V1 protocol was removed; use protocol v2.")
+    if privacy_mode not in PRIVACY_MODE_CHOICES:
+        raise SystemExit(f"--privacy-mode must be one of: {', '.join(PRIVACY_MODE_CHOICES)}")
+    privacy_guidance = privacy_mode_guidance(privacy_mode)
     prompt = f"""You are advising Codex as an independent collaborator.
 
 Mode: {mode}
 Approval mode: {approval_mode}
 Role: {role}
 Role guidance: {ROLE_GUIDANCE[role]}
+Privacy mode: {privacy_mode}
 
 {MODE_GUIDANCE[mode]}
+{privacy_guidance}
 
 Approval guidance:
 - If approval mode is unsupervised, proceed through local tool permission prompts without stopping for Codex approval.
@@ -1509,6 +1573,7 @@ def new_session_state(args: argparse.Namespace, workspace: Path, session_id: str
         "mode": args.mode,
         "role": args.role,
         "approval_mode": args.approval_mode,
+        "privacy_mode": args.privacy_mode,
         "execution": args.execution,
         "requested_tools": requested_tools(args.tool, args),
         "tool_session_ids": {
@@ -1560,7 +1625,7 @@ def make_session(args: argparse.Namespace, workspace: Path) -> tuple[dict, Path,
 
 def inherit_session_args(args: argparse.Namespace, session: dict) -> None:
     explicit_flags = getattr(args, "explicit_flags", set())
-    for field in ("tool", "mode", "role", "approval_mode", "execution", "protocol"):
+    for field in ("tool", "mode", "role", "approval_mode", "privacy_mode", "execution", "protocol"):
         if field not in explicit_flags and session.get(field):
             mark_preference_ignored(args, field, "session_state")
             setattr(args, field, session[field])
@@ -1886,6 +1951,10 @@ def opencode_serialization_enabled(args: argparse.Namespace) -> bool:
     return bool(getattr(args, "serialize_opencode", False)) or env_flag_enabled("PANDA_SERIALIZE_OPENCODE")
 
 
+def opencode_auto_approval_enabled(args: argparse.Namespace) -> bool:
+    return args.approval_mode == "unsupervised" and args.privacy_mode != "advisory-summary"
+
+
 def opencode_backed_command_names(args: argparse.Namespace) -> set[str]:
     configured_agents = getattr(args, "configured_agents", [])
     if configured_agents:
@@ -2038,6 +2107,71 @@ def tool_selection_warnings(args: argparse.Namespace) -> list[dict]:
     ]
 
 
+def codex_reviewer_export_allowed(args: argparse.Namespace) -> bool:
+    return (
+        bool(getattr(args, "allow_codex_reviewer", False))
+        or getattr(args, "privacy_mode", "normal") in {"advisory-summary", "full-context"}
+        or env_flag_enabled("PANDA_ALLOW_CODEX_REVIEWER")
+    )
+
+
+def selected_codex_reviewers(args: argparse.Namespace) -> list[str]:
+    configured_agents = getattr(args, "configured_agents", [])
+    if configured_agents:
+        return [
+            agent["name"]
+            for agent in configured_agents
+            if agent.get("backend") == "codex"
+        ]
+    return [
+        tool
+        for tool in requested_tools(args.tool, args)
+        if tool == "codex"
+    ]
+
+
+def enforce_codex_reviewer_export_policy(args: argparse.Namespace) -> None:
+    if getattr(args, "dry_run", False):
+        return
+    codex_reviewers = selected_codex_reviewers(args)
+    if not codex_reviewers or codex_reviewer_export_allowed(args):
+        return
+    selected_text = ", ".join(codex_reviewers)
+    raise SystemExit(f"{CODEX_REVIEWER_EXPORT_MESSAGE} Selected Codex reviewer: {selected_text}.")
+
+
+def selected_external_reviewers(args: argparse.Namespace) -> list[str]:
+    configured_agents = getattr(args, "configured_agents", [])
+    if configured_agents:
+        return [
+            agent["name"]
+            for agent in configured_agents
+            if agent.get("backend") in {"claude", "opencode", "codex"}
+        ]
+    return requested_tools(args.tool, args)
+
+
+def private_context_export_allowed(args: argparse.Namespace) -> bool:
+    return (
+        getattr(args, "privacy_mode", "normal") == "full-context"
+        or env_flag_enabled("PANDA_ALLOW_PRIVATE_CONTEXT_EXPORT")
+    )
+
+
+def enforce_private_context_export_policy(args: argparse.Namespace) -> None:
+    if getattr(args, "dry_run", False):
+        return
+    if args.mode != "explore" or args.role != "code-review":
+        return
+    if private_context_export_allowed(args):
+        return
+    reviewers = selected_external_reviewers(args)
+    if not reviewers:
+        return
+    selected_text = ", ".join(reviewers)
+    raise SystemExit(f"{PRIVATE_CONTEXT_EXPORT_MESSAGE} Selected reviewers: {selected_text}.")
+
+
 def build_commands(
     args: argparse.Namespace,
     prompt: str,
@@ -2116,7 +2250,7 @@ def build_commands(
             if opencode_session_id:
                 commands[name].extend(["--session", opencode_session_id])
             commands[name].extend(["--format", "json"])
-        if args.approval_mode == "unsupervised":
+        if opencode_auto_approval_enabled(args):
             commands[name].append("--dangerously-skip-permissions")
         opencode_model = profile_resolution["effective_models"][model_key]
         if opencode_model:
@@ -2225,7 +2359,7 @@ def build_agent_commands(
                 if opencode_session_id:
                     command.extend(["--session", opencode_session_id])
                 command.extend(["--format", "json"])
-            if args.approval_mode == "unsupervised":
+            if opencode_auto_approval_enabled(args):
                 command.append("--dangerously-skip-permissions")
             command.extend(["--model", model])
             command.append(prompt)
@@ -2266,6 +2400,8 @@ def default_output_dir() -> Path:
 
 
 def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
+    enforce_private_context_export_policy(args)
+    enforce_codex_reviewer_export_policy(args)
     output_dir = args.output_dir or default_output_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
     isolated_cwd = output_dir / "isolated-cwd"
@@ -2319,6 +2455,7 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
         "execution": "parallel" if run_parallel else "sequential",
         "requested_execution": args.execution,
         "approval_mode": args.approval_mode,
+        "privacy_mode": args.privacy_mode,
         "role": args.role,
         "dry_run": args.dry_run,
         "output_dir": str(output_dir),
@@ -2758,11 +2895,20 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
                 previous_context, memory_info = load_previous_turn_memory(session, session_path)
                 memory_info["enabled"] = True
         reject_disabled_mode(args.mode)
+        enforce_private_context_export_policy(args)
+        enforce_codex_reviewer_export_policy(args)
 
         if created or session_memory_disabled(args):
             previous_context = None
         prompt_user_context = add_session_memory_to_prompt(user_prompt, previous_context)
-        prompt = consultation_prompt(args.mode, args.role, args.approval_mode, prompt_user_context, args.protocol)
+        prompt = consultation_prompt(
+            args.mode,
+            args.role,
+            args.approval_mode,
+            prompt_user_context,
+            args.protocol,
+            args.privacy_mode,
+        )
         session_path.mkdir(parents=True, exist_ok=True)
         turn_number, turn_dir = next_available_turn_dir(
             session_path,
@@ -2788,6 +2934,7 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
             "mode": args.mode,
             "role": args.role,
             "approval_mode": args.approval_mode,
+            "privacy_mode": args.privacy_mode,
             "execution": args.execution,
             "requested_tools": requested_tools(args.tool, args),
             "models": dict(profile_metadata["effective_models"]),
@@ -2882,6 +3029,7 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
             "execution": "parallel" if run_parallel else "sequential",
             "requested_execution": args.execution,
             "approval_mode": args.approval_mode,
+            "privacy_mode": args.privacy_mode,
             "role": args.role,
             "dry_run": args.dry_run,
             "output_dir": str(turn_dir),
@@ -2933,7 +3081,14 @@ def main() -> int:
     user_prompt = read_prompt(args)
     if args.session is not None:
         return run_session(args, user_prompt)
-    prompt = consultation_prompt(args.mode, args.role, args.approval_mode, user_prompt, args.protocol)
+    prompt = consultation_prompt(
+        args.mode,
+        args.role,
+        args.approval_mode,
+        user_prompt,
+        args.protocol,
+        args.privacy_mode,
+    )
     return run_one_shot(args, prompt)
 
 
