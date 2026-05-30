@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `panda_export.v1.json` export contracts plus `--prepare-export-manifest` and `--export-manifest` validation for auditable summary versus full-context review.
+- Isolate OpenCode runtime DB/log state with Panda-managed `XDG_DATA_HOME` while keeping user OpenCode config/auth untouched.
 - Clarify manifest tool selection metadata by adding `tool_selector` and `tool_selection_source` alongside the legacy `tool` field.
 
 ## v1.2.1 - 2026-05-30

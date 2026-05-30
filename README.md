@@ -44,6 +44,16 @@ For private or tenant-restricted workspaces, use
 `--privacy-mode advisory-summary --mode advisory` with a Codex-prepared summary
 or skip external consultation.
 
+Every consultation writes `panda_export.v1.json` beside `manifest.json`. The
+export contract records whether Panda is doing summary review, full-context
+review, or normal advisory work; whether raw repository access or shell
+exploration is allowed; the destination tools/models; and a SHA-256 hash of the
+exact prompt. Use `--prepare-export-manifest --output-dir ...` to generate this
+contract without launching reviewers, then pass `--export-manifest PATH` on the
+matching run to fail closed if prompt, workspace, privacy mode, tool selection,
+or destinations changed. The contract is for audit and policy decisions; it
+does not bypass tenant policy.
+
 ROI recommendation: once Panda becomes part of regular Codex work, the first
 optional paid add-on we recommend is OpenCode Go alongside Codex. As of
 May 29, 2026, OpenCode lists Go at $5 for the first month and then $10/month,
@@ -183,6 +193,7 @@ Metrics teach the next prompt.
 Normal consultations write compact artifacts such as:
 
 - `manifest.json`
+- `panda_export.v1.json`
 - `evidence.json`
 - `{tool}.summary.json`
 - `panda_contracts.v2.json`
@@ -190,6 +201,13 @@ Normal consultations write compact artifacts such as:
 Contract-falsifier runs write `panda_falsifier.v2.json`. Raw `{tool}.txt` logs
 remain available for audit, but the compact JSON artifacts are the intended
 first read.
+
+For OpenCode-backed agents, Panda sets only `XDG_DATA_HOME` to a Panda-managed
+runtime directory: `<output_dir>/opencode-data` for one-shot runs and
+`<session_dir>/opencode-data` for session runs. It leaves `XDG_CONFIG_HOME`
+unset so existing OpenCode auth and provider configuration still work. If
+OpenCode fails against that managed runtime directory, Panda records a warning
+instead of silently retrying with broader filesystem access.
 
 ## Evaluation Status
 
@@ -231,6 +249,8 @@ when coordination cost, token budgets, and verification quality are controlled.
   use `--privacy-mode advisory-summary --mode advisory` when only a bounded
   summary should leave Codex. Summary mode uses an isolated working directory,
   but it is not an OS-level filesystem sandbox.
+- `panda_export.v1.json` makes exports auditable and fail-closed, but platform
+  trust rules still decide whether an escalated cloud-backed review is allowed.
 - Benchmark results are still exploratory and contamination-sensitive.
 - Claude/OpenCode/Codex availability, rate limits, and local CLI state can
   affect runs.

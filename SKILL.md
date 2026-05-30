@@ -46,6 +46,24 @@ secrets, credentials, or private logs. In this mode Panda runs from an isolated
 directory and tells collaborators to review only the summary. This is a working
 directory isolation boundary, not an OS-level filesystem sandbox.
 
+For Codex auto-review or tenant approval workflows, generate the export
+contract before launch:
+
+```bash
+python3 scripts/consult_ai_team.py \
+  --prepare-export-manifest \
+  --output-dir /tmp/panda-summary-review \
+  --mode advisory \
+  --role code-review \
+  --privacy-mode advisory-summary \
+  --prompt-file /path/to/codex-prepared-summary.txt
+```
+
+Then run the matching command with
+`--export-manifest /tmp/panda-summary-review/panda_export.v1.json`. Panda
+validates prompt hash, workspace, run directory, privacy mode, tool selection,
+and destinations before any reviewer starts. A mismatch fails closed.
+
 Use full-context code review only when the workspace is approved for external
 review:
 
@@ -61,6 +79,8 @@ The full-context lane allows external collaborators to inspect repository
 context. For the Codex reviewer backend, `--privacy-mode full-context` also
 serves as explicit Codex-reviewer export approval. In the summary lane,
 `--privacy-mode advisory-summary` approves only the bounded prompt summary.
+Full-context review should use a separate full-context export contract and
+still depends on Codex or tenant policy approval.
 
 ## Consultation Runner
 
@@ -100,16 +120,17 @@ The runner:
 - Allows shell commands in `explore` mode for inspection, testing, builds, logs, git state, and research.
 - Asks collaborators to avoid source edits and to report any changed files if a command unexpectedly modifies the workspace.
 - Writes each one-shot response plus a manifest under `/tmp/panda-consults/...` unless `--output-dir` is provided.
+- Writes `panda_export.v1.json` for every run. The export contract records the export mode, raw repo/shell permissions, prompt hash, requested tools, agents, destinations, and approval source metadata.
 - Uses the V2 protocol by default. V2 preserves the compact evidence layer and writes contract sidecars for every normal consultation.
 - Writes compact JSON artifacts next to the raw outputs: `evidence.json`, `{tool}.summary.json`, `panda_contracts.v2.json`, and, for sessions, `turn_summary.json`. Contract-falsifier runs write `panda_falsifier.v2.json` instead of `panda_contracts.v2.json`. Read these first; inspect raw `{tool}.txt` logs only when details are needed.
 
-Use `--prompt-file` for longer prompts, `--workspace` to target a repo explicitly, `--approval-mode supervised` to disable collaborator auto-approval, `--execution parallel` or `--execution sequential` to override auto execution, `--profile fast|balanced|deep` to choose cost/depth, and `--dry-run` to inspect commands without calling the tools. Use `--privacy-mode advisory-summary --mode advisory` when the collaborator should review only a Codex-prepared summary. Use `--privacy-mode full-context` only when live full-context export is approved for the workspace; use `--allow-codex-reviewer` or `PANDA_ALLOW_CODEX_REVIEWER=1` only when the selected Codex reviewer prompt/context is approved for export. Use `--session` to create a persistent Panda session, `--session <id>` to continue it, `--session-dir` to choose where session state lives, and `--straggler-timeout` to bound how long a session turn waits for lagging collaborators after another collaborator has finished. Use `--no-session-memory` or `PANDA_NO_SESSION_MEMORY=1` to skip previous-turn summary injection. Use `--serialize-opencode` or `PANDA_SERIALIZE_OPENCODE=1` only as a diagnostic fallback if GLM/Qwen appear to contend on OpenCode runtime state; OpenCode-backed tools still run in parallel by default. Environment overrides are also supported with `AI_TEAM_EXECUTION`, `AI_TEAM_APPROVAL_MODE`, `PANDA_NO_SESSION_MEMORY`, `PANDA_SERIALIZE_OPENCODE`, `PANDA_ALLOW_CODEX_REVIEWER`, `PANDA_ALLOW_PRIVATE_CONTEXT_EXPORT`, `OPENCODE_MODEL`, `CODEX_MODEL`, `CODEX_REASONING_EFFORT`, and `CODEX_EFFORT`; invalid values are rejected.
+Use `--prompt-file` for longer prompts, `--workspace` to target a repo explicitly, `--approval-mode supervised` to disable collaborator auto-approval, `--execution parallel` or `--execution sequential` to override auto execution, `--profile fast|balanced|deep` to choose cost/depth, and `--dry-run` to inspect commands without calling the tools. Use `--privacy-mode advisory-summary --mode advisory` when the collaborator should review only a Codex-prepared summary. Use `--prepare-export-manifest --output-dir ...` to write `panda_export.v1.json` without launching reviewers, and use `--export-manifest PATH` on the matching launch so Panda validates the precomputed contract before reviewer execution. Use `--privacy-mode full-context` only when live full-context export is approved for the workspace; use `--allow-codex-reviewer` or `PANDA_ALLOW_CODEX_REVIEWER=1` only when the selected Codex reviewer prompt/context is approved for export. Use `--session` to create a persistent Panda session, `--session <id>` to continue it, `--session-dir` to choose where session state lives, and `--straggler-timeout` to bound how long a session turn waits for lagging collaborators after another collaborator has finished. Use `--no-session-memory` or `PANDA_NO_SESSION_MEMORY=1` to skip previous-turn summary injection. Use `--serialize-opencode` or `PANDA_SERIALIZE_OPENCODE=1` only as a diagnostic fallback if GLM/Qwen appear to contend on OpenCode runtime state; OpenCode-backed tools still run in parallel by default. Environment overrides are also supported with `AI_TEAM_EXECUTION`, `AI_TEAM_APPROVAL_MODE`, `PANDA_NO_SESSION_MEMORY`, `PANDA_SERIALIZE_OPENCODE`, `PANDA_ALLOW_CODEX_REVIEWER`, `PANDA_ALLOW_PRIVATE_CONTEXT_EXPORT`, `OPENCODE_MODEL`, `CODEX_MODEL`, `CODEX_REASONING_EFFORT`, and `CODEX_EFFORT`; invalid values are rejected.
 
 When the user clearly asks to remember Panda defaults, use `--save-preferences` with explicit `--agent` flags. Preferences are user-scoped JSON at `PANDA_PREFERENCES_FILE`, `$XDG_CONFIG_HOME/panda/preferences.json`, or `~/.config/panda/preferences.json`; they are never inferred from normal runs or manifests. New saves write one behavior profile with named agents, for example `profile.agents: [{name, backend, model, effort?}]`; OpenCode is the backend, so Kimi, GLM, Qwen, or any other OpenCode model should be represented as separate named OpenCode agents. Every successful save automatically smoke-tests the saved profile by reloading it and building the Panda commands it would run; if the backend is unavailable or command construction fails, the save fails before writing. Legacy slot-style preference files are loaded for compatibility. Use `--show-preferences` to inspect, `--reset-preferences` to clear, and `--ignore-preferences` or `PANDA_NO_PREFERENCES=1` to bypass them for one invocation. A one-off single `--agent ...` run overrides saved preferences. Existing Panda sessions keep their stored agent/model state unless explicitly overridden.
 
 If a configured optional CLI is later removed or unavailable on `PATH`, Panda fails that saved profile clearly instead of silently dropping the advisor. Update the profile with `--save-preferences`, or bypass it once with `--ignore-preferences`.
 
-When Codex runs the runner with OpenCode enabled, execute it outside the filesystem sandbox when the CLI needs to update its own state. OpenCode writes to `~/.local/share/opencode`; sandboxed runs can fail with SQLite or permission errors before the collaborator starts. Codex may still need one host-level approval to launch the runner outside the sandbox, but collaborator CLIs should not pause for their own internal approvals after launch. For full-context external review or the Codex reviewer, do not request host-level approval in private workspaces unless `--privacy-mode advisory-summary` for summary-only review, `--privacy-mode full-context`, `--allow-codex-reviewer`, or the corresponding `PANDA_ALLOW_*` environment variable is explicitly appropriate under the tenant policy.
+When Codex runs the runner with OpenCode enabled, Panda sets only `XDG_DATA_HOME` for OpenCode-backed tools so runtime DB/log state goes under `<output_dir>/opencode-data` for one-shot runs or `<session_dir>/opencode-data` for session runs. Panda leaves `XDG_CONFIG_HOME` unset so existing OpenCode auth and provider config remain available. If OpenCode fails with SQLite, PRAGMA, or WAL errors in the managed data dir, Panda records an `opencode_managed_data_dir_failure` warning and does not silently retry with broader filesystem access. Codex may still need host-level approval to launch cloud-backed CLIs or satisfy tenant policy, but collaborator CLIs should not pause for their own internal approvals after launch. For full-context external review or the Codex reviewer, do not request host-level approval in private workspaces unless `--privacy-mode advisory-summary` for summary-only review, `--privacy-mode full-context`, `--allow-codex-reviewer`, or the corresponding `PANDA_ALLOW_*` environment variable is explicitly appropriate under the tenant policy.
 
 Use model profiles to balance quality and cost:
 
@@ -229,7 +250,7 @@ For deeper prompt patterns, read `references/prompt-patterns.md`. For the Panda 
 - Do not ask external tools to make edits in the user's workspace. Codex is the only editor.
 - Allow shell commands for exploration when useful. Avoid commands that intentionally mutate source files, rewrite history, publish, deploy, delete data, or alter production systems.
 - Parallel `explore` mode can still create normal tool/build/test cache files in the shared workspace. Treat that as acceptable workspace noise for review and research, and use `--execution sequential` when a repo's commands are known to conflict.
-- Run OpenCode consultations outside Codex's filesystem sandbox when needed so OpenCode can update its own app state.
+- OpenCode runtime state is isolated with Panda-managed `XDG_DATA_HOME`; do not set `XDG_CONFIG_HOME` unless the user intentionally wants different OpenCode auth/config.
 - If a collaborator unexpectedly changes files, require a changed-file list and diff summary before Codex considers the work.
 - Use collaborator auto-approval deliberately. The runner uses Claude Code `bypassPermissions` and, outside `advisory-summary`, OpenCode `--dangerously-skip-permissions` in unsupervised mode so the tools can work without blocking on approval prompts.
 - Keep prompts bounded. Summarize large files and include only the snippets needed for the question.
@@ -244,7 +265,7 @@ For deeper prompt patterns, read `references/prompt-patterns.md`. For the Panda 
 - OpenCode agents pass `--model` only; use `--agent NAME=opencode:PROVIDER/MODEL` for GLM, Qwen, Kimi, or other OpenCode models. Do not pass OpenCode `--variant`.
 - Codex reviewer agents use `--agent codex=codex:MODEL@EFFORT`. The default is `gpt-5.5` with `medium` reasoning. Live Codex reviewer execution requires `--privacy-mode advisory-summary` for summary-only review, `--privacy-mode full-context` for approved repository-context review, `--allow-codex-reviewer`, or `PANDA_ALLOW_CODEX_REVIEWER=1`. The runner launches Codex with read-only sandboxing, `--ephemeral`, and `--ask-for-approval never`.
 - OpenCode usage: use `opencode stats --models`, `opencode run --format json`, or `opencode export <sessionID>` when token/cost/model details need inspection.
-- Runner manifests record the legacy `tool` selector plus explicit `tool_selector` and `tool_selection_source` fields. Use `requested_tools` and `agents` as the launched collaborator set when `tool_selection_source` is `agents`. Manifests also record `profile`, `profile_source`, `cost_tier`, profile-wide `effective_models`, launch-scoped `active_models`, `effective_effort`, `effort_support`, `applied_effort`, preference metadata, telemetry, artifact paths, and best-effort requested model/effort fields.
+- Runner manifests record the legacy `tool` selector plus explicit `tool_selector` and `tool_selection_source` fields. Use `requested_tools` and `agents` as the launched collaborator set when `tool_selection_source` is `agents`. Manifests also record `profile`, `profile_source`, `cost_tier`, profile-wide `effective_models`, launch-scoped `active_models`, `effective_effort`, `effort_support`, `applied_effort`, preference metadata, telemetry, artifact paths, the export manifest path, OpenCode runtime metadata when applicable, and best-effort requested model/effort fields.
 - Treat usage metadata as best-effort unless the runner explicitly captures it for that run. When exact accounting matters, verify against the tool's native stats/export output.
 
 ## Evaluation

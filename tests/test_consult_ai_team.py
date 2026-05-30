@@ -258,6 +258,19 @@ class ArgumentValidationTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.parse_with(["--straggler-timeout", "0", "--prompt", "test"])
 
+    def test_prepare_export_manifest_requires_output_dir_and_one_shot(self) -> None:
+        with self.assertRaises(SystemExit):
+            self.parse_with(["--prepare-export-manifest", "--prompt", "test"])
+        with self.assertRaises(SystemExit):
+            self.parse_with([
+                "--prepare-export-manifest",
+                "--output-dir",
+                "/tmp/panda-export",
+                "--session",
+                "--prompt",
+                "test",
+            ])
+
     def test_serialize_opencode_flag_and_env_are_supported(self) -> None:
         args = self.parse_with(["--serialize-opencode", "--prompt", "test"])
         self.assertTrue(consult_ai_team.opencode_serialization_enabled(args))
@@ -517,6 +530,28 @@ class FailureResultTests(unittest.TestCase):
         self.assertFalse(result["timed_out"])
         self.assertIn("RuntimeError: boom", result["stderr"])
         self.assertEqual(result["started_at"], result["finished_at"])
+
+    def test_opencode_managed_data_dir_failure_is_warned(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            data_home = output_dir / "opencode-data"
+            result = consult_ai_team.run_tool(
+                "opencode",
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; print('sqlite PRAGMA wal_checkpoint failed', file=sys.stderr); sys.exit(1)",
+                ],
+                Path.cwd(),
+                timeout=5,
+                dry_run=False,
+                output_dir=output_dir,
+                env_overrides={"XDG_DATA_HOME": str(data_home)},
+            )
+
+        self.assertIn("opencode_managed_data_dir_failure", result["warnings"])
+        self.assertIn("Panda warning: OpenCode failed", result["stderr"])
+        self.assertEqual(result["env"]["XDG_DATA_HOME"], str(data_home))
 
 
 class JsonHelperTests(unittest.TestCase):
@@ -1247,6 +1282,492 @@ class ManifestTests(unittest.TestCase):
             command = manifest["tools"][0]["command"]
             self.assertNotIn("--dangerously-skip-permissions", command)
 
+    def test_export_contract_classifies_advisory_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "out"
+            workspace = Path(tmpdir) / "workspace"
+            run_cwd = output_dir / "isolated-cwd"
+            args = self.parse_with([
+                "--tool",
+                "opencode",
+                "--mode",
+                "advisory",
+                "--role",
+                "code-review",
+                "--privacy-mode",
+                "advisory-summary",
+                "--workspace",
+                str(workspace),
+                "--output-dir",
+                str(output_dir),
+                "--prompt",
+                "summary",
+            ])
+            prompt = consult_ai_team.consultation_prompt(
+                args.mode,
+                args.role,
+                args.approval_mode,
+                "summary",
+                args.protocol,
+                args.privacy_mode,
+            )
+
+            contract = consult_ai_team.build_export_contract(args, prompt, workspace, run_cwd)
+
+        self.assertEqual(contract["export_mode"], "summary-review")
+        self.assertFalse(contract["raw_repo_access"])
+        self.assertFalse(contract["raw_diff_included"])
+        self.assertFalse(contract["raw_logs_included"])
+        self.assertFalse(contract["shell_explore_allowed"])
+        self.assertEqual(contract["requested_tools"], ["opencode"])
+        consult_ai_team.validate_export_contract_semantics(contract)
+
+    def test_export_contract_classifies_full_context_review(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace = Path(tmpdir) / "workspace"
+            args = self.parse_with([
+                "--tool",
+                "opencode",
+                "--mode",
+                "explore",
+                "--role",
+                "code-review",
+                "--privacy-mode",
+                "full-context",
+                "--workspace",
+                str(workspace),
+                "--prompt",
+                "review current diff",
+            ])
+            prompt = consult_ai_team.consultation_prompt(
+                args.mode,
+                args.role,
+                args.approval_mode,
+                "review current diff",
+                args.protocol,
+                args.privacy_mode,
+            )
+
+            contract = consult_ai_team.build_export_contract(args, prompt, workspace, workspace)
+
+        self.assertEqual(contract["export_mode"], "full-context-review")
+        self.assertTrue(contract["raw_repo_access"])
+        self.assertTrue(contract["shell_explore_allowed"])
+        self.assertEqual(contract["approval"]["privacy_mode"], "full-context")
+        consult_ai_team.validate_export_contract_semantics(contract)
+
+    def test_export_contract_records_agent_selection_and_destinations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace = Path(tmpdir) / "workspace"
+            run_cwd = Path(tmpdir) / "out" / "isolated-cwd"
+            args = self.parse_with([
+                "--agent",
+                "glm=opencode:opencode-go/glm-5.1",
+                "--mode",
+                "advisory",
+                "--privacy-mode",
+                "advisory-summary",
+                "--prompt",
+                "summary",
+            ])
+            prompt = consult_ai_team.consultation_prompt(
+                args.mode,
+                args.role,
+                args.approval_mode,
+                "summary",
+                args.protocol,
+                args.privacy_mode,
+            )
+
+            contract = consult_ai_team.build_export_contract(args, prompt, workspace, run_cwd)
+
+        self.assertEqual(contract["tool_selector"], "codex")
+        self.assertEqual(contract["tool_selection_source"], "agents")
+        self.assertEqual(contract["requested_tools"], ["glm"])
+        self.assertEqual(
+            contract["agents"],
+            [{"name": "glm", "backend": "opencode", "model": "opencode-go/glm-5.1"}],
+        )
+        self.assertEqual(
+            contract["destinations"],
+            [{"name": "glm", "backend": "opencode", "model": "opencode-go/glm-5.1"}],
+        )
+
+    def test_export_contract_prompt_hash_changes_with_prompt_content(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace = Path(tmpdir) / "workspace"
+            run_cwd = Path(tmpdir) / "out" / "isolated-cwd"
+            args = self.parse_with([
+                "--mode",
+                "advisory",
+                "--privacy-mode",
+                "advisory-summary",
+                "--prompt",
+                "summary",
+            ])
+
+            first = consult_ai_team.build_export_contract(args, "first prompt", workspace, run_cwd)
+            second = consult_ai_team.build_export_contract(args, "second prompt", workspace, run_cwd)
+
+        self.assertNotEqual(first["prompt_sha256"], second["prompt_sha256"])
+        self.assertEqual(first["prompt_characters"], len("first prompt"))
+
+    def test_prepare_export_manifest_writes_contract_without_launching(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "out"
+            args = self.parse_with([
+                "--prepare-export-manifest",
+                "--output-dir",
+                str(output_dir),
+                "--mode",
+                "advisory",
+                "--privacy-mode",
+                "advisory-summary",
+                "--prompt",
+                "summary",
+            ])
+            prompt = consult_ai_team.consultation_prompt(
+                args.mode,
+                args.role,
+                args.approval_mode,
+                "summary",
+                args.protocol,
+                args.privacy_mode,
+            )
+
+            with patch.object(consult_ai_team, "build_commands", side_effect=AssertionError("built commands")):
+                with patch.object(consult_ai_team, "run_one_shot_commands", side_effect=AssertionError("launched")):
+                    with redirect_stdout(io.StringIO()):
+                        consult_ai_team.run_one_shot(args, prompt)
+
+            export_manifest = json.loads((output_dir / consult_ai_team.EXPORT_MANIFEST_NAME).read_text(encoding="utf-8"))
+
+        self.assertEqual(export_manifest["export_mode"], "summary-review")
+        self.assertFalse((output_dir / "manifest.json").exists())
+
+    def test_malformed_export_manifest_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "out"
+            manifest_path = Path(tmpdir) / "bad-export.json"
+            manifest_path.write_text("{bad json", encoding="utf-8")
+            args = self.parse_with([
+                "--dry-run",
+                "--export-manifest",
+                str(manifest_path),
+                "--output-dir",
+                str(output_dir),
+                "--mode",
+                "advisory",
+                "--privacy-mode",
+                "advisory-summary",
+                "--prompt",
+                "summary",
+            ])
+            prompt = consult_ai_team.consultation_prompt(
+                args.mode,
+                args.role,
+                args.approval_mode,
+                "summary",
+                args.protocol,
+                args.privacy_mode,
+            )
+
+            with patch.object(consult_ai_team, "build_commands", side_effect=AssertionError("built commands")):
+                with patch.object(consult_ai_team, "run_one_shot_commands", side_effect=AssertionError("launched")):
+                    with self.assertRaisesRegex(SystemExit, "Malformed Panda export manifest"):
+                        consult_ai_team.run_one_shot(args, prompt)
+
+            self.assertFalse((output_dir / "manifest.json").exists())
+
+    def test_missing_export_manifest_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "out"
+            missing_path = Path(tmpdir) / "missing-export.json"
+            args = self.parse_with([
+                "--dry-run",
+                "--export-manifest",
+                str(missing_path),
+                "--output-dir",
+                str(output_dir),
+                "--mode",
+                "advisory",
+                "--privacy-mode",
+                "advisory-summary",
+                "--prompt",
+                "summary",
+            ])
+            prompt = consult_ai_team.consultation_prompt(
+                args.mode,
+                args.role,
+                args.approval_mode,
+                "summary",
+                args.protocol,
+                args.privacy_mode,
+            )
+
+            with patch.object(consult_ai_team, "build_commands", side_effect=AssertionError("built commands")):
+                with patch.object(consult_ai_team, "run_one_shot_commands", side_effect=AssertionError("launched")):
+                    with self.assertRaisesRegex(SystemExit, "Unable to read Panda export manifest"):
+                        consult_ai_team.run_one_shot(args, prompt)
+
+            self.assertFalse((output_dir / "manifest.json").exists())
+
+    def test_non_object_export_manifest_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "out"
+            manifest_path = Path(tmpdir) / "array-export.json"
+            consult_ai_team.write_json(manifest_path, [])
+            args = self.parse_with([
+                "--dry-run",
+                "--export-manifest",
+                str(manifest_path),
+                "--output-dir",
+                str(output_dir),
+                "--mode",
+                "advisory",
+                "--privacy-mode",
+                "advisory-summary",
+                "--prompt",
+                "summary",
+            ])
+            prompt = consult_ai_team.consultation_prompt(
+                args.mode,
+                args.role,
+                args.approval_mode,
+                "summary",
+                args.protocol,
+                args.privacy_mode,
+            )
+
+            with patch.object(consult_ai_team, "build_commands", side_effect=AssertionError("built commands")):
+                with patch.object(consult_ai_team, "run_one_shot_commands", side_effect=AssertionError("launched")):
+                    with self.assertRaisesRegex(SystemExit, "expected a JSON object"):
+                        consult_ai_team.run_one_shot(args, prompt)
+
+            self.assertFalse((output_dir / "manifest.json").exists())
+
+    def test_export_manifest_mismatch_fails_before_command_construction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "out"
+            prepared_dir = Path(tmpdir) / "prepared"
+            args = self.parse_with([
+                "--prepare-export-manifest",
+                "--output-dir",
+                str(prepared_dir),
+                "--mode",
+                "advisory",
+                "--privacy-mode",
+                "advisory-summary",
+                "--prompt",
+                "summary",
+            ])
+            prompt = consult_ai_team.consultation_prompt(
+                args.mode,
+                args.role,
+                args.approval_mode,
+                "summary",
+                args.protocol,
+                args.privacy_mode,
+            )
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_one_shot(args, prompt)
+            prepared = prepared_dir / consult_ai_team.EXPORT_MANIFEST_NAME
+
+            run_args = self.parse_with([
+                "--dry-run",
+                "--export-manifest",
+                str(prepared),
+                "--output-dir",
+                str(output_dir),
+                "--mode",
+                "advisory",
+                "--privacy-mode",
+                "advisory-summary",
+                "--prompt",
+                "different summary",
+            ])
+            mismatched_prompt = consult_ai_team.consultation_prompt(
+                run_args.mode,
+                run_args.role,
+                run_args.approval_mode,
+                "different summary",
+                run_args.protocol,
+                run_args.privacy_mode,
+            )
+
+            with patch.object(consult_ai_team, "build_commands", side_effect=AssertionError("built commands")):
+                with patch.object(consult_ai_team, "run_one_shot_commands", side_effect=AssertionError("launched")):
+                    with self.assertRaisesRegex(SystemExit, "prompt_sha256"):
+                        consult_ai_team.run_one_shot(run_args, mismatched_prompt)
+
+            self.assertFalse((output_dir / "manifest.json").exists())
+
+    def test_export_manifest_is_validated_and_copied_into_run_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "out"
+            args = self.parse_with([
+                "--prepare-export-manifest",
+                "--output-dir",
+                str(output_dir),
+                "--mode",
+                "advisory",
+                "--privacy-mode",
+                "advisory-summary",
+                "--prompt",
+                "summary",
+            ])
+            prompt = consult_ai_team.consultation_prompt(
+                args.mode,
+                args.role,
+                args.approval_mode,
+                "summary",
+                args.protocol,
+                args.privacy_mode,
+            )
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_one_shot(args, prompt)
+            prepared = output_dir / consult_ai_team.EXPORT_MANIFEST_NAME
+            prepared_contract = json.loads(prepared.read_text(encoding="utf-8"))
+
+            run_args = self.parse_with([
+                "--dry-run",
+                "--export-manifest",
+                str(prepared),
+                "--output-dir",
+                str(output_dir),
+                "--mode",
+                "advisory",
+                "--privacy-mode",
+                "advisory-summary",
+                "--prompt",
+                "summary",
+            ])
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_one_shot(run_args, prompt)
+
+            manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+            copied_contract = json.loads(prepared.read_text(encoding="utf-8"))
+
+        self.assertEqual(copied_contract, prepared_contract)
+        self.assertEqual(manifest["export_manifest"], prepared_contract)
+        self.assertEqual(
+            manifest["telemetry"]["artifact_paths"]["export_manifest"],
+            str(output_dir / consult_ai_team.EXPORT_MANIFEST_NAME),
+        )
+
+    def test_export_manifest_mismatches_fail_before_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "out"
+            workspace = Path(tmpdir) / "workspace"
+            run_cwd = output_dir / "isolated-cwd"
+            args = self.parse_with([
+                "--tool",
+                "opencode",
+                "--mode",
+                "advisory",
+                "--privacy-mode",
+                "advisory-summary",
+                "--workspace",
+                str(workspace),
+                "--output-dir",
+                str(output_dir),
+                "--prompt",
+                "summary",
+            ])
+            prompt = consult_ai_team.consultation_prompt(
+                args.mode,
+                args.role,
+                args.approval_mode,
+                "summary",
+                args.protocol,
+                args.privacy_mode,
+            )
+            expected = consult_ai_team.build_export_contract(args, prompt, workspace, run_cwd)
+            tampered_values = {
+                "prompt_sha256": "0" * 64,
+                "tool_selector": "all",
+                "privacy_mode": {"privacy_mode": "normal", "export_mode": "standard-advisory"},
+                "workspace": str(Path(tmpdir) / "other"),
+                "destinations": [],
+            }
+            for field, value in tampered_values.items():
+                with self.subTest(field=field):
+                    tampered = json.loads(json.dumps(expected))
+                    if isinstance(value, dict):
+                        tampered.update(value)
+                    else:
+                        tampered[field] = value
+                    path = Path(tmpdir) / f"{field}.json"
+                    consult_ai_team.write_json(path, tampered)
+
+                    with self.assertRaisesRegex(SystemExit, field):
+                        consult_ai_team.validate_supplied_export_manifest(expected, path)
+
+    def test_opencode_dry_run_uses_managed_data_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            args = self.parse_with([
+                "--tool",
+                "opencode",
+                "--dry-run",
+                "--mode",
+                "advisory",
+                "--role",
+                "code-review",
+                "--privacy-mode",
+                "advisory-summary",
+                "--output-dir",
+                tmpdir,
+                "--prompt",
+                "summary",
+            ])
+            prompt = consult_ai_team.consultation_prompt(
+                args.mode,
+                args.role,
+                args.approval_mode,
+                "summary",
+                args.protocol,
+                args.privacy_mode,
+            )
+
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_one_shot(args, prompt)
+
+            manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+            tool = manifest["tools"][0]
+
+        self.assertEqual(tool["env"]["XDG_DATA_HOME"], str(output_dir / "opencode-data"))
+        self.assertNotIn("--dangerously-skip-permissions", tool["command"])
+        self.assertEqual(
+            manifest["telemetry"]["opencode_runtime"],
+            {
+                "tools": ["opencode"],
+                "xdg_data_home": str(output_dir / "opencode-data"),
+                "data_dir": str(output_dir / "opencode-data" / "opencode"),
+            },
+        )
+
+    def test_non_opencode_dry_run_does_not_get_managed_data_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = self.parse_with([
+                "--tool",
+                "codex",
+                "--dry-run",
+                "--output-dir",
+                tmpdir,
+                "--prompt",
+                "test",
+            ])
+            prompt = consult_ai_team.consultation_prompt(args.mode, args.role, args.approval_mode, "test")
+
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_one_shot(args, prompt)
+
+            manifest = json.loads((Path(tmpdir) / "manifest.json").read_text(encoding="utf-8"))
+
+        self.assertNotIn("env", manifest["tools"][0])
+        self.assertNotIn("opencode_runtime", manifest["telemetry"])
+
     def test_one_shot_manifest_includes_profile_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
@@ -1933,6 +2454,39 @@ class SessionTests(unittest.TestCase):
             manifest = json.loads((session_dir / "turns" / "001" / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["execution"], "sequential")
             self.assertEqual([tool["tool"] for tool in manifest["tools"]], ["claude", "opencode", "qwen"])
+
+    def test_session_opencode_uses_stable_managed_data_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = self.parse_with([
+                "--session",
+                "--session-dir",
+                tmpdir,
+                "--tool",
+                "opencode",
+                "--mode",
+                "advisory",
+                "--role",
+                "code-review",
+                "--privacy-mode",
+                "advisory-summary",
+                "--dry-run",
+                "--prompt",
+                "first",
+            ])
+
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_session(args, "first")
+
+            session_dir = next(path for path in Path(tmpdir).iterdir() if path.is_dir())
+            manifest = json.loads((session_dir / "turns" / "001" / "manifest.json").read_text(encoding="utf-8"))
+            tool = manifest["tools"][0]
+
+        self.assertEqual(tool["env"]["XDG_DATA_HOME"], str(session_dir / "opencode-data"))
+        self.assertEqual(manifest["telemetry"]["opencode_runtime"]["xdg_data_home"], str(session_dir / "opencode-data"))
+        self.assertEqual(
+            manifest["telemetry"]["artifact_paths"]["export_manifest"],
+            str(session_dir / "turns" / "001" / consult_ai_team.EXPORT_MANIFEST_NAME),
+        )
 
     def test_session_continuation_inherits_role_and_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

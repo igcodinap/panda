@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import datetime as dt
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -159,6 +160,8 @@ ROLE_DEFAULT_PROFILES = {
 }
 HARD_FALLBACK_PROFILE = "balanced"
 SCHEMA_VERSION = 1
+EXPORT_MANIFEST_SCHEMA_VERSION = 1
+EXPORT_MANIFEST_NAME = "panda_export.v1.json"
 DEFAULT_STRAGGLER_TIMEOUT = 120
 SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 CLAUDE_EFFORT_SUPPORT_CACHE: dict[str, bool] = {}
@@ -258,6 +261,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--session-dir", type=Path, help="Directory for persistent AI team sessions.")
     parser.add_argument("--workspace", type=Path, default=Path.cwd(), help="Workspace to run explore consultations in.")
     parser.add_argument("--output-dir", type=Path, help="Directory for responses and manifest.")
+    parser.add_argument(
+        "--prepare-export-manifest",
+        action="store_true",
+        help=(
+            f"Write {EXPORT_MANIFEST_NAME} to --output-dir and exit without launching reviewers. "
+            "Requires --output-dir and is intended for pre-approval workflows."
+        ),
+    )
+    parser.add_argument(
+        "--export-manifest",
+        type=Path,
+        help=(
+            f"Validate a precomputed {EXPORT_MANIFEST_NAME} before launching reviewers, "
+            "then copy it into the run output for audit."
+        ),
+    )
     parser.add_argument("--timeout", type=int, default=600, help="Timeout per tool in seconds.")
     parser.add_argument(
         "--straggler-timeout",
@@ -366,6 +385,10 @@ def parse_args() -> argparse.Namespace:
         parser.error("--straggler-timeout must be at least 1 second.")
     if args.timeout < 1:
         parser.error("--timeout must be at least 1 second.")
+    if args.prepare_export_manifest and args.output_dir is None:
+        parser.error("--prepare-export-manifest requires --output-dir.")
+    if args.prepare_export_manifest and args.session is not None:
+        parser.error("--prepare-export-manifest is supported for one-shot runs only.")
     args.explicit_flags = explicit_flags
     args.preference_sourced_fields = set()
     args.preferences_metadata = base_preferences_metadata(args)
@@ -1502,6 +1525,7 @@ def build_telemetry(
     artifact_paths: dict,
     prompt: Optional[str] = None,
     extra_warnings: Optional[list[dict]] = None,
+    opencode_runtime: Optional[dict] = None,
 ) -> dict:
     latencies = [
         result.get("latency_seconds")
@@ -1527,6 +1551,8 @@ def build_telemetry(
         telemetry["prompt"] = prompt_telemetry(prompt)
         if telemetry["prompt"]["warning"]:
             warnings.append({"tool": None, "code": "prompt_soft_limit_exceeded"})
+    if opencode_runtime:
+        telemetry["opencode_runtime"] = opencode_runtime
     telemetry["warnings"] = warnings
     return telemetry
 
@@ -1784,13 +1810,19 @@ def popen_process(
     cwd: Path,
     stdout_file,
     stderr_file,
+    env_overrides: Optional[dict[str, str]] = None,
 ) -> subprocess.Popen:
+    env = None
+    if env_overrides:
+        env = os.environ.copy()
+        env.update(env_overrides)
     return subprocess.Popen(
         command,
         cwd=str(cwd),
         stdout=stdout_file,
         stderr=stderr_file,
         text=True,
+        env=env,
         start_new_session=(os.name == "posix"),
     )
 
@@ -1829,6 +1861,7 @@ def run_tool(
     timeout: int,
     dry_run: bool,
     output_dir: Optional[Path] = None,
+    env_overrides: Optional[dict[str, str]] = None,
 ) -> dict:
     started = dt.datetime.now(dt.timezone.utc).isoformat()
     result = {
@@ -1842,6 +1875,8 @@ def run_tool(
         "stderr": "",
         "finished_at": None,
     }
+    if env_overrides:
+        result["env"] = dict(env_overrides)
     if dry_run:
         result["stdout"] = quote_cmd(command)
         result["returncode"] = 0
@@ -1865,7 +1900,7 @@ def run_tool(
     try:
         stdout_file = stdout_path.open("w", encoding="utf-8")
         stderr_file = stderr_path.open("w", encoding="utf-8")
-        process = popen_process(command, cwd, stdout_file, stderr_file)
+        process = popen_process(command, cwd, stdout_file, stderr_file, env_overrides)
         try:
             result["returncode"] = process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -1899,6 +1934,14 @@ def run_tool(
         result["stderr"] = stderr_text
     if result["timed_out"] and not result["stderr"].strip():
         result["stderr"] = f"Timed out after {timeout} seconds."
+    warning = opencode_data_dir_failure_warning(result, env_overrides)
+    if warning:
+        result.setdefault("warnings", []).append(warning)
+        result["stderr"] = (
+            result["stderr"].rstrip()
+            + "\nPanda warning: OpenCode failed while using Panda-managed XDG_DATA_HOME; "
+            "inspect the recorded opencode data dir and retry after clearing stale runtime state."
+        ).strip()
     if temp_dir is not None:
         temp_dir.cleanup()
         result.pop("stdout_path", None)
@@ -1968,6 +2011,51 @@ def opencode_backed_command_names(args: argparse.Namespace) -> set[str]:
     return set(OPENCODE_BACKED_TOOLS)
 
 
+def opencode_xdg_data_home(root: Path) -> Path:
+    return root / "opencode-data"
+
+
+def build_tool_env_overrides(
+    args: argparse.Namespace,
+    commands: dict[str, list[str]],
+    opencode_data_home: Path,
+) -> dict[str, dict[str, str]]:
+    opencode_names = opencode_backed_command_names(args)
+    overrides = {}
+    for name in commands:
+        if name in opencode_names:
+            opencode_data_home.mkdir(parents=True, exist_ok=True)
+            overrides[name] = {"XDG_DATA_HOME": str(opencode_data_home)}
+    return overrides
+
+
+def opencode_runtime_metadata(env_overrides: dict[str, dict[str, str]]) -> Optional[dict]:
+    tools = sorted(
+        name
+        for name, overrides in env_overrides.items()
+        if overrides.get("XDG_DATA_HOME")
+    )
+    if not tools:
+        return None
+    xdg_data_home = env_overrides[tools[0]]["XDG_DATA_HOME"]
+    return {
+        "tools": tools,
+        "xdg_data_home": xdg_data_home,
+        "data_dir": str(Path(xdg_data_home) / "opencode"),
+    }
+
+
+def opencode_data_dir_failure_warning(result: dict, env_overrides: Optional[dict[str, str]]) -> Optional[str]:
+    if not env_overrides or not env_overrides.get("XDG_DATA_HOME"):
+        return None
+    if result_status(result) == "success":
+        return None
+    combined = f"{result.get('stdout') or ''}\n{result.get('stderr') or ''}".lower()
+    if "sqlite" not in combined and "pragma" not in combined and "wal_checkpoint" not in combined:
+        return None
+    return "opencode_managed_data_dir_failure"
+
+
 def split_serialized_opencode_commands(
     commands: dict[str, list[str]],
     opencode_backed_names: Optional[set[str]] = None,
@@ -1984,11 +2072,20 @@ def run_one_shot_command_group(
     timeout: int,
     dry_run: bool,
     output_dir: Path,
+    env_overrides: Optional[dict[str, dict[str, str]]] = None,
 ) -> dict[str, dict]:
     results = {}
     for name, command in commands.items():
         try:
-            results[name] = run_tool(name, command, run_cwd, timeout, dry_run, output_dir)
+            results[name] = run_tool(
+                name,
+                command,
+                run_cwd,
+                timeout,
+                dry_run,
+                output_dir,
+                (env_overrides or {}).get(name),
+            )
         except Exception as exc:
             results[name] = failed_tool_result(name, command, run_cwd, exc)
     return results
@@ -2003,9 +2100,10 @@ def run_one_shot_commands(
     run_parallel: bool,
     serialize_opencode: bool,
     opencode_backed_names: Optional[set[str]] = None,
+    env_overrides: Optional[dict[str, dict[str, str]]] = None,
 ) -> dict[str, dict]:
     if not run_parallel:
-        return run_one_shot_command_group(commands, run_cwd, timeout, dry_run, output_dir)
+        return run_one_shot_command_group(commands, run_cwd, timeout, dry_run, output_dir, env_overrides)
 
     raw_results: dict[str, dict] = {}
     parallel_commands, serialized_opencode = ({}, {})
@@ -2017,7 +2115,18 @@ def run_one_shot_commands(
     with ThreadPoolExecutor(max_workers=max(1, len(parallel_commands) + bool(serialized_opencode))) as executor:
         futures = {}
         for name, command in parallel_commands.items():
-            futures[executor.submit(run_tool, name, command, run_cwd, timeout, dry_run, output_dir)] = name
+            futures[
+                executor.submit(
+                    run_tool,
+                    name,
+                    command,
+                    run_cwd,
+                    timeout,
+                    dry_run,
+                    output_dir,
+                    (env_overrides or {}).get(name),
+                )
+            ] = name
         if serialized_opencode:
             futures[
                 executor.submit(
@@ -2027,6 +2136,7 @@ def run_one_shot_commands(
                     timeout,
                     dry_run,
                     output_dir,
+                    env_overrides,
                 )
             ] = "__serialized_opencode__"
         for future in as_completed(futures):
@@ -2115,6 +2225,232 @@ def tool_selection_warnings(args: argparse.Namespace) -> list[dict]:
         {"tool": tool, "code": "auto_tool_unavailable"}
         for tool in getattr(args, "_auto_skipped_tools", [])
     ]
+
+
+def runner_version() -> str:
+    pyproject = REPO_ROOT / "pyproject.toml"
+    if pyproject.exists():
+        match = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"), re.MULTILINE)
+        if match:
+            return match.group(1)
+    try:
+        from importlib import metadata as importlib_metadata
+
+        return importlib_metadata.version("panda")
+    except Exception:
+        pass
+    return "unknown"
+
+
+def prompt_source(args: argparse.Namespace) -> str:
+    sources = []
+    if getattr(args, "prompt", None):
+        sources.append("prompt")
+    if getattr(args, "prompt_file", None):
+        sources.append("prompt_file")
+    if getattr(args, "session", None) is not None:
+        sources.append("session")
+    return "+".join(sources) or "unknown"
+
+
+def export_mode(args: argparse.Namespace) -> str:
+    if args.privacy_mode == "advisory-summary":
+        return "summary-review"
+    if args.privacy_mode == "full-context" and args.mode == "explore":
+        return "full-context-review"
+    return "standard-advisory"
+
+
+def export_destinations(args: argparse.Namespace) -> list[dict]:
+    destinations = []
+    configured_agents = getattr(args, "configured_agents", [])
+    if configured_agents:
+        for agent in configured_agents:
+            destination = {
+                "name": agent["name"],
+                "backend": agent["backend"],
+                "model": agent["model"],
+            }
+            if agent.get("effort"):
+                destination["effort"] = agent["effort"]
+            destinations.append(destination)
+        return destinations
+
+    resolution = get_profile_resolution(args)
+    for tool in requested_tools(args.tool, args):
+        if tool == "claude":
+            destination = {
+                "name": "claude",
+                "backend": "claude",
+                "model": resolution["effective_models"]["claude"],
+            }
+            if resolution["effective_effort"]["claude"]:
+                destination["effort"] = resolution["effective_effort"]["claude"]
+        elif tool == "opencode":
+            destination = {
+                "name": "opencode",
+                "backend": "opencode",
+                "model": resolution["effective_models"]["opencode"],
+            }
+        elif tool == "qwen":
+            destination = {
+                "name": "qwen",
+                "backend": "opencode",
+                "model": resolution["effective_models"]["qwen"],
+            }
+        elif tool == "codex":
+            destination = {
+                "name": "codex",
+                "backend": "codex",
+                "model": resolution["effective_models"]["codex"],
+            }
+            if resolution["effective_effort"]["codex"]:
+                destination["effort"] = resolution["effective_effort"]["codex"]
+        else:
+            destination = {
+                "name": tool,
+                "backend": "unknown",
+                "model": None,
+            }
+        destinations.append(destination)
+    return destinations
+
+
+def export_approval_metadata(args: argparse.Namespace) -> dict:
+    env = {
+        "PANDA_ALLOW_CODEX_REVIEWER": env_flag_enabled("PANDA_ALLOW_CODEX_REVIEWER"),
+        "PANDA_ALLOW_PRIVATE_CONTEXT_EXPORT": env_flag_enabled("PANDA_ALLOW_PRIVATE_CONTEXT_EXPORT"),
+    }
+    sources = []
+    if args.privacy_mode in {"advisory-summary", "full-context"}:
+        sources.append("privacy_mode")
+    if getattr(args, "allow_codex_reviewer", False):
+        sources.append("allow_codex_reviewer")
+    if any(env.values()):
+        sources.append("env")
+    return {
+        "sources": sources or ["none"],
+        "privacy_mode": args.privacy_mode,
+        "allow_codex_reviewer": bool(getattr(args, "allow_codex_reviewer", False)),
+        "env": env,
+    }
+
+
+def build_export_contract(
+    args: argparse.Namespace,
+    prompt: str,
+    workspace: Path,
+    run_cwd: Path,
+) -> dict:
+    mode = export_mode(args)
+    raw_repo_access = args.mode == "explore"
+    return {
+        "schema_version": EXPORT_MANIFEST_SCHEMA_VERSION,
+        "created_at": now_iso(),
+        "runner_version": runner_version(),
+        "workspace": str(workspace.resolve()),
+        "run_cwd": str(run_cwd.resolve()),
+        "mode": args.mode,
+        "role": args.role,
+        "privacy_mode": args.privacy_mode,
+        "export_mode": mode,
+        "raw_repo_access": raw_repo_access,
+        "raw_diff_included": False,
+        "raw_logs_included": False,
+        "shell_explore_allowed": args.mode == "explore",
+        "tool_selector": args.tool,
+        "tool_selection_source": tool_selection_source(args),
+        "requested_tools": requested_tools(args.tool, args),
+        "agents": [dict(agent) for agent in getattr(args, "configured_agents", [])],
+        "destinations": export_destinations(args),
+        "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+        "prompt_characters": len(prompt),
+        "prompt_source": prompt_source(args),
+        "approval": export_approval_metadata(args),
+    }
+
+
+def validate_export_contract_semantics(contract: dict) -> None:
+    if contract.get("schema_version") != EXPORT_MANIFEST_SCHEMA_VERSION:
+        raise SystemExit(
+            f"Unsupported Panda export manifest schema: {contract.get('schema_version')!r}."
+        )
+    if contract.get("export_mode") == "summary-review":
+        if contract.get("privacy_mode") != "advisory-summary":
+            raise SystemExit("Invalid Panda export manifest: summary-review requires privacy_mode=advisory-summary.")
+        if contract.get("mode") != "advisory":
+            raise SystemExit("Invalid Panda export manifest: advisory-summary requires mode=advisory.")
+        if contract.get("raw_repo_access"):
+            raise SystemExit("Invalid Panda export manifest: summary-review must not have raw repo access.")
+        if contract.get("shell_explore_allowed"):
+            raise SystemExit("Invalid Panda export manifest: summary-review must not allow shell exploration.")
+        if contract.get("workspace") == contract.get("run_cwd"):
+            raise SystemExit("Invalid Panda export manifest: summary-review must use an isolated run_cwd.")
+    if contract.get("privacy_mode") == "advisory-summary" and contract.get("export_mode") != "summary-review":
+        raise SystemExit("Invalid Panda export manifest: advisory-summary must use summary-review.")
+    if contract.get("export_mode") == "full-context-review":
+        if contract.get("privacy_mode") != "full-context":
+            raise SystemExit("Invalid Panda export manifest: full-context-review requires privacy_mode=full-context.")
+        if contract.get("mode") != "explore":
+            raise SystemExit("Invalid Panda export manifest: full-context-review requires mode=explore.")
+        if not contract.get("raw_repo_access"):
+            raise SystemExit("Invalid Panda export manifest: full-context-review must have raw repo access.")
+        if not contract.get("shell_explore_allowed"):
+            raise SystemExit("Invalid Panda export manifest: full-context-review must allow shell exploration.")
+
+
+EXPORT_MANIFEST_MATCH_FIELDS = (
+    "schema_version",
+    "workspace",
+    "run_cwd",
+    "mode",
+    "role",
+    "privacy_mode",
+    "export_mode",
+    "raw_repo_access",
+    "raw_diff_included",
+    "raw_logs_included",
+    "shell_explore_allowed",
+    "tool_selector",
+    "tool_selection_source",
+    "requested_tools",
+    "agents",
+    "destinations",
+    "prompt_sha256",
+    "prompt_characters",
+    "prompt_source",
+    "approval",
+)
+
+
+def validate_supplied_export_manifest(expected: dict, path: Path) -> dict:
+    try:
+        supplied = read_json(path)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Malformed Panda export manifest at {path}: {exc}") from exc
+    except OSError as exc:
+        raise SystemExit(f"Unable to read Panda export manifest at {path}: {exc}") from exc
+    if not isinstance(supplied, dict):
+        raise SystemExit(f"Invalid Panda export manifest at {path}: expected a JSON object.")
+    validate_export_contract_semantics(supplied)
+    mismatches = [
+        field
+        for field in EXPORT_MANIFEST_MATCH_FIELDS
+        if supplied.get(field) != expected.get(field)
+    ]
+    if mismatches:
+        raise SystemExit(
+            "Panda export manifest mismatch before reviewer launch: "
+            + ", ".join(mismatches)
+        )
+    return supplied
+
+
+def write_export_contract(output_dir: Path, contract: dict) -> str:
+    validate_export_contract_semantics(contract)
+    path = output_dir / EXPORT_MANIFEST_NAME
+    write_json(path, contract)
+    return str(path)
 
 
 def codex_reviewer_export_allowed(args: argparse.Namespace) -> bool:
@@ -2414,8 +2750,6 @@ def default_output_dir() -> Path:
 
 
 def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
-    enforce_private_context_export_policy(args)
-    enforce_codex_reviewer_export_policy(args)
     output_dir = args.output_dir or default_output_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
     isolated_cwd = output_dir / "isolated-cwd"
@@ -2423,10 +2757,25 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
     workspace = args.workspace.resolve()
     run_cwd = isolated_cwd if args.mode == "advisory" else workspace
 
-    commands, _ = build_commands(args, prompt, run_cwd)
+    export_contract = build_export_contract(args, prompt, workspace, run_cwd)
+    if args.export_manifest:
+        export_contract = validate_supplied_export_manifest(export_contract, args.export_manifest)
+    export_manifest_path = write_export_contract(output_dir, export_contract)
+    if args.prepare_export_manifest:
+        print(f"Wrote Panda export manifest to {export_manifest_path}")
+        return 0
 
+    enforce_private_context_export_policy(args)
+    enforce_codex_reviewer_export_policy(args)
+
+    commands, _ = build_commands(args, prompt, run_cwd)
     run_parallel = should_run_parallel(args.execution, args.mode, len(commands))
     serialize_opencode = opencode_serialization_enabled(args)
+    env_overrides = build_tool_env_overrides(
+        args,
+        commands,
+        opencode_xdg_data_home(output_dir),
+    )
     raw_results = run_one_shot_commands(
         commands,
         run_cwd,
@@ -2436,6 +2785,7 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
         run_parallel,
         serialize_opencode,
         opencode_backed_command_names(args),
+        env_overrides,
     )
 
     for result in raw_results.values():
@@ -2458,6 +2808,7 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
     artifact_paths = {
         "evidence": artifact_info["evidence_path"],
         "summaries": artifact_info["summary_paths"],
+        "export_manifest": export_manifest_path,
     }
     if protocol_artifact_paths:
         artifact_paths.update(protocol_artifact_paths)
@@ -2479,6 +2830,8 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
         "run_cwd": str(run_cwd),
         "requested_tools": requested_tools(args.tool, args),
         "serialize_opencode": serialize_opencode,
+        "export_manifest": export_contract,
+        "export_manifest_path": export_manifest_path,
         "preferences": preference_manifest_metadata(args),
         "agents": [dict(agent) for agent in getattr(args, "configured_agents", [])],
         "tools": results,
@@ -2487,6 +2840,7 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
             artifact_paths,
             prompt=prompt,
             extra_warnings=tool_selection_warnings(args),
+            opencode_runtime=opencode_runtime_metadata(env_overrides),
         ),
     }
     manifest["protocol"] = args.protocol
@@ -2498,6 +2852,7 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
         print(f"- {name}: {output_dir / f'{name}.txt'}")
     return 0
 
+
 def session_result(
     name: str,
     command: list[str],
@@ -2505,8 +2860,9 @@ def session_result(
     started_at: str,
     stdout_path: Path,
     stderr_path: Path,
+    env_overrides: Optional[dict[str, str]] = None,
 ) -> dict:
-    return {
+    result = {
         "tool": name,
         "command": command,
         "cwd": str(cwd),
@@ -2521,6 +2877,9 @@ def session_result(
         "stderr_path": str(stderr_path),
         "finished_at": None,
     }
+    if env_overrides:
+        result["env"] = dict(env_overrides)
+    return result
 
 
 def read_text_if_exists(path: Path) -> str:
@@ -2545,8 +2904,24 @@ def finalize_session_result(result: dict, json_tools: set[str]) -> None:
         result["warnings"] = warnings
         result["usage"] = usage
         result["stdout"] = text or raw_stdout
+        warning = opencode_data_dir_failure_warning(result, result.get("env"))
+        if warning:
+            result.setdefault("warnings", []).append(warning)
+            result["stderr"] = (
+                result["stderr"].rstrip()
+                + "\nPanda warning: OpenCode failed while using Panda-managed XDG_DATA_HOME; "
+                "inspect the recorded opencode data dir and retry after clearing stale runtime state."
+            ).strip()
         return
     result["stdout"] = raw_stdout
+    warning = opencode_data_dir_failure_warning(result, result.get("env"))
+    if warning:
+        result.setdefault("warnings", []).append(warning)
+        result["stderr"] = (
+            result["stderr"].rstrip()
+            + "\nPanda warning: OpenCode failed while using Panda-managed XDG_DATA_HOME; "
+            "inspect the recorded opencode data dir and retry after clearing stale runtime state."
+        ).strip()
 
 
 def run_session_tools(
@@ -2557,11 +2932,19 @@ def run_session_tools(
     dry_run: bool,
     output_dir: Path,
     json_tools: set[str],
+    env_overrides: Optional[dict[str, dict[str, str]]] = None,
 ) -> dict[str, dict]:
     if dry_run:
         results = {}
         for name, command in commands.items():
-            result = run_tool(name, command, run_cwd, timeout, dry_run=True)
+            result = run_tool(
+                name,
+                command,
+                run_cwd,
+                timeout,
+                dry_run=True,
+                env_overrides=(env_overrides or {}).get(name),
+            )
             result["status"] = "dry_run"
             result["timeout_kind"] = None
             results[name] = result
@@ -2580,9 +2963,10 @@ def run_session_tools(
             stderr_file = stderr_path.open("w", encoding="utf-8")
             files.extend([stdout_file, stderr_file])
             started_at = now_iso()
-            results[name] = session_result(name, command, run_cwd, started_at, stdout_path, stderr_path)
+            tool_env = (env_overrides or {}).get(name)
+            results[name] = session_result(name, command, run_cwd, started_at, stdout_path, stderr_path, tool_env)
             try:
-                process = popen_process(command, run_cwd, stdout_file, stderr_file)
+                process = popen_process(command, run_cwd, stdout_file, stderr_file, tool_env)
             except OSError as exc:
                 stderr_file.write(f"Failed to launch {name}: {exc}\n")
                 stderr_file.flush()
@@ -2671,6 +3055,7 @@ def run_session_command_group(
     dry_run: bool,
     output_dir: Path,
     json_tools: set[str],
+    env_overrides: Optional[dict[str, dict[str, str]]] = None,
 ) -> dict[str, dict]:
     raw_results = {}
     for name, command in commands.items():
@@ -2682,6 +3067,7 @@ def run_session_command_group(
             dry_run,
             output_dir,
             {name} if name in json_tools else set(),
+            env_overrides,
         ))
     return raw_results
 
@@ -2697,6 +3083,7 @@ def run_session_commands(
     run_parallel: bool,
     serialize_opencode: bool,
     opencode_backed_names: Optional[set[str]] = None,
+    env_overrides: Optional[dict[str, dict[str, str]]] = None,
 ) -> dict[str, dict]:
     if not run_parallel:
         return run_session_command_group(
@@ -2707,9 +3094,10 @@ def run_session_commands(
             dry_run,
             output_dir,
             json_tools,
+            env_overrides,
         )
     if not serialize_opencode:
-        return run_session_tools(commands, run_cwd, timeout, straggler_timeout, dry_run, output_dir, json_tools)
+        return run_session_tools(commands, run_cwd, timeout, straggler_timeout, dry_run, output_dir, json_tools, env_overrides)
 
     raw_results = {}
     parallel_commands, serialized_opencode = split_serialized_opencode_commands(commands, opencode_backed_names)
@@ -2726,6 +3114,7 @@ def run_session_commands(
                     dry_run,
                     output_dir,
                     json_tools.intersection(parallel_commands),
+                    env_overrides,
                 )
             ] = "__parallel__"
         if serialized_opencode:
@@ -2739,6 +3128,7 @@ def run_session_commands(
                     dry_run,
                     output_dir,
                     json_tools.intersection(serialized_opencode),
+                    env_overrides,
                 )
             ] = "__serialized_opencode__"
         for future in as_completed(futures):
@@ -2911,8 +3301,6 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
                 previous_context, memory_info = load_previous_turn_memory(session, session_path)
                 memory_info["enabled"] = True
         reject_disabled_mode(args.mode)
-        enforce_private_context_export_policy(args)
-        enforce_codex_reviewer_export_policy(args)
 
         if created or session_memory_disabled(args):
             previous_context = None
@@ -2937,6 +3325,14 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
         isolated_cwd = session_path / "isolated-cwd"
         isolated_cwd.mkdir(exist_ok=True)
         run_cwd = isolated_cwd if args.mode == "advisory" else workspace
+
+        export_contract = build_export_contract(args, prompt, workspace, run_cwd)
+        if args.export_manifest:
+            export_contract = validate_supplied_export_manifest(export_contract, args.export_manifest)
+        export_manifest_path = write_export_contract(turn_dir, export_contract)
+
+        enforce_private_context_export_policy(args)
+        enforce_codex_reviewer_export_policy(args)
 
         commands, json_tools = build_commands(args, prompt, run_cwd, session=session)
         profile_metadata = profile_manifest_metadata(args)
@@ -2976,6 +3372,11 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
 
         run_parallel = should_run_parallel(args.execution, args.mode, len(commands))
         serialize_opencode = opencode_serialization_enabled(args)
+        env_overrides = build_tool_env_overrides(
+            args,
+            commands,
+            opencode_xdg_data_home(session_path),
+        )
         raw_results = run_session_commands(
             commands,
             run_cwd,
@@ -2987,6 +3388,7 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
             run_parallel,
             serialize_opencode,
             opencode_backed_command_names(args),
+            env_overrides,
         )
 
         for name in json_tools:
@@ -3013,6 +3415,7 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
         artifact_paths = {
             "evidence": artifact_info["evidence_path"],
             "summaries": artifact_info["summary_paths"],
+            "export_manifest": export_manifest_path,
         }
         if protocol_artifact_paths:
             artifact_paths.update(protocol_artifact_paths)
@@ -3059,6 +3462,8 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
             "run_cwd": str(run_cwd),
             "requested_tools": requested_tools(args.tool, args),
             "serialize_opencode": serialize_opencode,
+            "export_manifest": export_contract,
+            "export_manifest_path": export_manifest_path,
             "preferences": preference_manifest_metadata(args),
             "agents": [dict(agent) for agent in getattr(args, "configured_agents", [])],
             "session_memory": memory_info,
@@ -3073,6 +3478,7 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
                 artifact_paths,
                 prompt=prompt,
                 extra_warnings=extra_warnings,
+                opencode_runtime=opencode_runtime_metadata(env_overrides),
             ),
         }
         manifest["protocol"] = args.protocol
