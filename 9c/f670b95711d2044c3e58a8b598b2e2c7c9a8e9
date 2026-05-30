@@ -1,0 +1,23 @@
+CHANGELOG.md
+  s_083404c0442daf::t_0fc99bdd63fbde 5-6
+pyproject.toml
+  s_083404c0442daf::t_802b5d23d31807 7
+site/package.json
+  s_083404c0442daf::t_a4d9685d0d6f5b 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9cf670b95711d2044c3e58a8b598b2e2c7c9a8e9",
+  "prompts": {},
+  "sessions": {
+    "s_083404c0442daf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e79c6-f57d-7b42-95ef-3dca23361640",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
