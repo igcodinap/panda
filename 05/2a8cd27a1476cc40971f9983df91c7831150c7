@@ -1,0 +1,21 @@
+README.md
+  s_083404c0442daf::t_11b2d2d0825ca4 57-60
+SECURITY.md
+  s_083404c0442daf::t_a856f07af8a922 7-112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "052a8cd27a1476cc40971f9983df91c7831150c7",
+  "prompts": {},
+  "sessions": {
+    "s_083404c0442daf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e79c6-f57d-7b42-95ef-3dca23361640",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
