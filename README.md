@@ -54,6 +54,10 @@ matching run to fail closed if prompt, workspace, privacy mode, tool selection,
 or destinations changed. The contract is for audit and policy decisions; it
 does not bypass tenant policy.
 
+See `SECURITY.md` for Panda's security model, including external context export
+rules, local CLI auth boundaries, host-level Claude Code launch guidance, and
+artifact handling expectations.
+
 ROI recommendation: once Panda becomes part of regular Codex work, the first
 optional paid add-on we recommend is OpenCode Go alongside Codex. As of
 May 29, 2026, OpenCode lists Go at $5 for the first month and then $10/month,
