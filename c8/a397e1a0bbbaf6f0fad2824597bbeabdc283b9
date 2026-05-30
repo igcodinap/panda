@@ -1,0 +1,77 @@
+CHANGELOG.md
+  s_d71e2761fb46d4::t_676e164156c7cd 1-9
+references/evaluation-hard-local.md
+  s_d71e2761fb46d4::t_5a541d53771b18 152
+site/package.json
+  s_d71e2761fb46d4::t_b20cabf50514fe 3
+README.md
+  s_2d157a2580fd52::t_36b81534075c4d 39-45,232-233
+  s_d71e2761fb46d4::t_fe516ccd63132f 33-34,59-61,94-98,100-104,123-127,164-165,228-229
+  s_2d157a2580fd52::t_efe1ae54f6b14d 82-93
+  s_d71e2761fb46d4::t_59a8708afe5b7c 99,230-231
+SKILL.md
+  s_d71e2761fb46d4::t_d81808bdb8fcc2 82,104,110,243
+  s_2d157a2580fd52::t_85cf9e086a1d81 31-62
+  s_d71e2761fb46d4::t_2715d3ba8642a7 10,78,90,149,162
+scripts/consult_ai_team.py
+  s_2d157a2580fd52::t_4ff5e888165b32 849,2904-2911,3084-3091
+  s_d71e2761fb46d4::t_bfc2c6341ef0fb 53-55,60,294-300,2110,2116-2140,2404,2899
+  s_2d157a2580fd52::t_03842227ac1a69 1954-1957,2253,2362
+  s_2d157a2580fd52::t_918d98d26efbec 61-68,71,172
+  s_2d157a2580fd52::t_bc03d19342b7fb 1576,2458,2937,3032
+  s_2d157a2580fd52::t_87510868c7c094 2113
+  s_2d157a2580fd52::t_5aec30ba51492c 2403,2898
+  s_2d157a2580fd52::t_a87f9050aa1e46 1085-1101
+  s_2d157a2580fd52::t_94d3941f6b3e10 56-59,1628
+  s_2d157a2580fd52::t_039a06f02fd744 235-244,356,363-364
+  s_2d157a2580fd52::t_d2e80ca87be442 2111-2112,2114-2115,2141-2172
+  s_2d157a2580fd52::t_23132a6d92956c 1108,1115-1117,1124,1127
+pyproject.toml
+  s_d71e2761fb46d4::t_f20c3ebe48aa76 7
+src/panda_v2/contracts.py
+  s_2d157a2580fd52::t_893bdd241270cf 32
+tests/test_panda_v2.py
+  s_2d157a2580fd52::t_025a187c6895a7 195
+  s_2d157a2580fd52::t_88bd2b2946db28 168,176-177,184-188,190-194,198,295-296,298-302
+  s_2d157a2580fd52::t_0115c8cf079eb1 189,196-197
+  s_2d157a2580fd52::t_a8b9c55712006b 200-209
+SECURITY.md
+  s_d71e2761fb46d4::t_d37235ff3f7bd0 25,28-29
+  s_d71e2761fb46d4::t_8e018f6e21c225 26-27,30-33
+references/evaluation-nightly.md
+  s_d71e2761fb46d4::t_0c7419461ac683 64-67
+src/panda_v2/extractors.py
+  s_2d157a2580fd52::t_4f1981641e4ecd 23-24,76,85,93-94,98-100
+  s_2d157a2580fd52::t_9f1a4be7fe1a3a 75,77-84,86-92,101-115,120-136
+  s_2d157a2580fd52::t_0bd6ccd6a06ee8 95-97
+tests/test_consult_ai_team.py
+  s_2d157a2580fd52::t_51b9866743ff04 99,102-122,135-137,145-186
+  s_2d157a2580fd52::t_f91bbe410c6ca4 143-144
+  s_2d157a2580fd52::t_cf144af0ded98a 1119,1125-1163
+  s_2d157a2580fd52::t_fc5b95ce0d9364 1079-1092
+  s_d71e2761fb46d4::t_7f81dabc9a1253 123-134,138-142,187-207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c8a397e1a0bbbaf6f0fad2824597bbeabdc283b9",
+  "prompts": {},
+  "sessions": {
+    "s_2d157a2580fd52": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e78f6-4559-7d22-90e5-22d7506d56f1",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    },
+    "s_d71e2761fb46d4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7939-cfd9-7121-a7e1-344e7a2c7cd8",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
