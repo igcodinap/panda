@@ -1,0 +1,26 @@
+scripts/consult_ai_team.py
+  s_083404c0442daf::t_baff8c148ec2f0 1937-1945,1948-1953
+  s_083404c0442daf::t_08241453064b92 2057-2081
+  s_083404c0442daf::t_4d4be50b3b4bf5 2948
+  s_083404c0442daf::t_428226e191691c 2943-2947,2951-2959,2962-2967
+tests/test_consult_ai_team.py
+  s_083404c0442daf::t_bd69e644e753eb 556-589
+SKILL.md
+  s_083404c0442daf::t_fdbbb9e80b3e9d 133-134,255
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8ad893181c04390913dc8337373bdad6990bda6f",
+  "prompts": {},
+  "sessions": {
+    "s_083404c0442daf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e79c6-f57d-7b42-95ef-3dca23361640",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
