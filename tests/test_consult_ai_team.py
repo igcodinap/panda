@@ -587,6 +587,67 @@ class FailureResultTests(unittest.TestCase):
             telemetry["warnings"],
         )
 
+    def test_claude_auth_warning_ignores_loose_login_mentions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            result = consult_ai_team.run_tool(
+                "claude",
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "import sys; "
+                        "print('Auth review: user is not logged in because the /login route failed.'); "
+                        "sys.exit(1)"
+                    ),
+                ],
+                Path.cwd(),
+                timeout=5,
+                dry_run=False,
+                output_dir=output_dir,
+            )
+
+        self.assertNotIn("claude_auth_unavailable_to_subprocess", result.get("warnings", []))
+        self.assertNotIn("Panda warning: Claude Code reported", result["stderr"])
+
+    def test_session_claude_auth_failure_is_warned(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            stdout_path = output_dir / "claude.stdout"
+            stderr_path = output_dir / "claude.stderr"
+            stdout_path.write_text("Not logged in · Please run /login\n", encoding="utf-8")
+            stderr_path.write_text("", encoding="utf-8")
+            result = consult_ai_team.session_result(
+                "claude",
+                ["claude", "-p", "test"],
+                Path.cwd(),
+                consult_ai_team.now_iso(),
+                stdout_path,
+                stderr_path,
+            )
+            result["returncode"] = 1
+            result["finished_at"] = consult_ai_team.now_iso()
+
+            consult_ai_team.finalize_session_result(result, set())
+            consult_ai_team.normalize_result_metadata(result)
+            consult_ai_team.write_response(output_dir, result)
+            artifact_info = consult_ai_team.write_run_artifacts(output_dir, {"claude": result}, ["claude"])
+            telemetry = consult_ai_team.build_telemetry(
+                {"claude": result},
+                {"evidence": artifact_info["evidence_path"]},
+            )
+
+        self.assertIn("claude_auth_unavailable_to_subprocess", result["warnings"])
+        self.assertIn("Panda warning: Claude Code reported", result["stderr"])
+        self.assertEqual(
+            artifact_info["evidence"]["findings"][0]["warnings"],
+            ["claude_auth_unavailable_to_subprocess"],
+        )
+        self.assertIn(
+            {"tool": "claude", "code": "claude_auth_unavailable_to_subprocess"},
+            telemetry["warnings"],
+        )
+
 
 class JsonHelperTests(unittest.TestCase):
     def test_write_json_writes_atomically_shaped_file(self) -> None:

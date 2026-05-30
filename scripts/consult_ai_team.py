@@ -76,6 +76,7 @@ LEGACY_ALL_TOOLS = ("claude", "opencode", "qwen")
 AUTO_TOOL_ORDER = ("claude", "opencode", "qwen", "codex")
 TOOL_CHOICES = ("claude", "opencode", "qwen", "codex", "all", "auto")
 PROTOCOL_CHOICES = ("v2",)
+CLAUDE_AUTH_FAILURE_RE = re.compile(r"\bnot logged in\b\W+please run /login\b", re.IGNORECASE)
 PREFERENCES_SCHEMA_VERSION = 1
 PREFERENCE_FIELDS = (
     "tool",
@@ -2073,8 +2074,8 @@ def claude_auth_failure_warning(name: str, command: list[str], result: dict) -> 
         return None
     if name != "claude" and "claude" not in command_basename(command):
         return None
-    combined = f"{result.get('stdout') or ''}\n{result.get('stderr') or ''}".lower()
-    if "not logged in" not in combined or "/login" not in combined:
+    combined = f"{result.get('stdout') or ''}\n{result.get('stderr') or ''}"
+    if not CLAUDE_AUTH_FAILURE_RE.search(combined):
         return None
     return "claude_auth_unavailable_to_subprocess"
 
