@@ -1,0 +1,38 @@
+tests/test_consult_ai_team.py
+  s_d71e2761fb46d4::t_b745c7a95313e5 397,406-438
+scripts/consult_ai_team.py
+  s_d71e2761fb46d4::t_ad8b02d5b5e9bf 2279-2280,2389-2390
+SKILL.md
+  s_2d157a2580fd52::t_25eaaa9cd1a128 62-63,96,106,234
+  s_2d157a2580fd52::t_b242e61219d4a1 112
+pyproject.toml
+  s_d71e2761fb46d4::t_d96496871aafe2 7
+CHANGELOG.md
+  s_d71e2761fb46d4::t_b74e58e43f20f3 3-8
+site/package.json
+  s_d71e2761fb46d4::t_2c2ad2fa1e5918 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "11e9e25a0f2878ea38cd9113f866d1e49b7832b1",
+  "prompts": {},
+  "sessions": {
+    "s_2d157a2580fd52": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e78f6-4559-7d22-90e5-22d7506d56f1",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    },
+    "s_d71e2761fb46d4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7939-cfd9-7121-a7e1-344e7a2c7cd8",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
