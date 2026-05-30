@@ -130,6 +130,8 @@ When the user clearly asks to remember Panda defaults, use `--save-preferences` 
 
 If a configured optional CLI is later removed or unavailable on `PATH`, Panda fails that saved profile clearly instead of silently dropping the advisor. Update the profile with `--save-preferences`, or bypass it once with `--ignore-preferences`.
 
+When Codex runs the runner with Claude Code enabled, launch Panda outside the Codex filesystem sandbox so Claude can access its OAuth/keychain login state. A sandboxed Panda child process can report `Not logged in · Please run /login` even when direct `claude -p` and interactive Claude Code are already authenticated; Panda records this as `claude_auth_unavailable_to_subprocess`.
+
 When Codex runs the runner with OpenCode enabled, Panda sets only `XDG_DATA_HOME` for OpenCode-backed tools so runtime DB/log state goes under `<output_dir>/opencode-data` for one-shot runs or `<session_dir>/opencode-data` for session runs. Panda leaves `XDG_CONFIG_HOME` unset so existing OpenCode auth and provider config remain available. If OpenCode fails with SQLite, PRAGMA, or WAL errors in the managed data dir, Panda records an `opencode_managed_data_dir_failure` warning and does not silently retry with broader filesystem access. Codex may still need host-level approval to launch cloud-backed CLIs or satisfy tenant policy, but collaborator CLIs should not pause for their own internal approvals after launch. For full-context external review or the Codex reviewer, do not request host-level approval in private workspaces unless `--privacy-mode advisory-summary` for summary-only review, `--privacy-mode full-context`, `--allow-codex-reviewer`, or the corresponding `PANDA_ALLOW_*` environment variable is explicitly appropriate under the tenant policy.
 
 Use model profiles to balance quality and cost:
@@ -250,6 +252,7 @@ For deeper prompt patterns, read `references/prompt-patterns.md`. For the Panda 
 - Do not ask external tools to make edits in the user's workspace. Codex is the only editor.
 - Allow shell commands for exploration when useful. Avoid commands that intentionally mutate source files, rewrite history, publish, deploy, delete data, or alter production systems.
 - Parallel `explore` mode can still create normal tool/build/test cache files in the shared workspace. Treat that as acceptable workspace noise for review and research, and use `--execution sequential` when a repo's commands are known to conflict.
+- Claude Code OAuth/keychain auth may be unavailable to sandboxed Panda subprocesses. If Claude reports `Not logged in` from Panda while `claude -p` works directly, rerun the Panda command outside the Codex filesystem sandbox.
 - OpenCode runtime state is isolated with Panda-managed `XDG_DATA_HOME`; do not set `XDG_CONFIG_HOME` unless the user intentionally wants different OpenCode auth/config.
 - If a collaborator unexpectedly changes files, require a changed-file list and diff summary before Codex considers the work.
 - Use collaborator auto-approval deliberately. The runner uses Claude Code `bypassPermissions` and, outside `advisory-summary`, OpenCode `--dangerously-skip-permissions` in unsupervised mode so the tools can work without blocking on approval prompts.

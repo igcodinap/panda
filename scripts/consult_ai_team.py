@@ -1934,14 +1934,23 @@ def run_tool(
         result["stderr"] = stderr_text
     if result["timed_out"] and not result["stderr"].strip():
         result["stderr"] = f"Timed out after {timeout} seconds."
+    warning = claude_auth_failure_warning(name, command, result)
+    if warning:
+        append_tool_warning(
+            result,
+            warning,
+            "Claude Code reported that it was not logged in when launched by the Panda runner. "
+            "If `claude -p` works directly, run Panda outside the Codex filesystem sandbox so "
+            "Claude can access its OAuth/keychain login state.",
+        )
     warning = opencode_data_dir_failure_warning(result, env_overrides)
     if warning:
-        result.setdefault("warnings", []).append(warning)
-        result["stderr"] = (
-            result["stderr"].rstrip()
-            + "\nPanda warning: OpenCode failed while using Panda-managed XDG_DATA_HOME; "
-            "inspect the recorded opencode data dir and retry after clearing stale runtime state."
-        ).strip()
+        append_tool_warning(
+            result,
+            warning,
+            "OpenCode failed while using Panda-managed XDG_DATA_HOME; inspect the recorded "
+            "opencode data dir and retry after clearing stale runtime state.",
+        )
     if temp_dir is not None:
         temp_dir.cleanup()
         result.pop("stdout_path", None)
@@ -2043,6 +2052,31 @@ def opencode_runtime_metadata(env_overrides: dict[str, dict[str, str]]) -> Optio
         "xdg_data_home": xdg_data_home,
         "data_dir": str(Path(xdg_data_home) / "opencode"),
     }
+
+
+def command_basename(command: list[str]) -> str:
+    if not command:
+        return ""
+    return Path(str(command[0])).name
+
+
+def append_tool_warning(result: dict, code: str, message: str) -> None:
+    result.setdefault("warnings", []).append(code)
+    result["stderr"] = (
+        result.get("stderr", "").rstrip()
+        + f"\nPanda warning: {message}"
+    ).strip()
+
+
+def claude_auth_failure_warning(name: str, command: list[str], result: dict) -> Optional[str]:
+    if result_status(result) == "success":
+        return None
+    if name != "claude" and "claude" not in command_basename(command):
+        return None
+    combined = f"{result.get('stdout') or ''}\n{result.get('stderr') or ''}".lower()
+    if "not logged in" not in combined or "/login" not in combined:
+        return None
+    return "claude_auth_unavailable_to_subprocess"
 
 
 def opencode_data_dir_failure_warning(result: dict, env_overrides: Optional[dict[str, str]]) -> Optional[str]:
@@ -2906,22 +2940,31 @@ def finalize_session_result(result: dict, json_tools: set[str]) -> None:
         result["stdout"] = text or raw_stdout
         warning = opencode_data_dir_failure_warning(result, result.get("env"))
         if warning:
-            result.setdefault("warnings", []).append(warning)
-            result["stderr"] = (
-                result["stderr"].rstrip()
-                + "\nPanda warning: OpenCode failed while using Panda-managed XDG_DATA_HOME; "
-                "inspect the recorded opencode data dir and retry after clearing stale runtime state."
-            ).strip()
+            append_tool_warning(
+                result,
+                warning,
+                "OpenCode failed while using Panda-managed XDG_DATA_HOME; inspect the recorded "
+                "opencode data dir and retry after clearing stale runtime state.",
+            )
         return
     result["stdout"] = raw_stdout
+    warning = claude_auth_failure_warning(result["tool"], result.get("command") or [], result)
+    if warning:
+        append_tool_warning(
+            result,
+            warning,
+            "Claude Code reported that it was not logged in when launched by the Panda runner. "
+            "If `claude -p` works directly, run Panda outside the Codex filesystem sandbox so "
+            "Claude can access its OAuth/keychain login state.",
+        )
     warning = opencode_data_dir_failure_warning(result, result.get("env"))
     if warning:
-        result.setdefault("warnings", []).append(warning)
-        result["stderr"] = (
-            result["stderr"].rstrip()
-            + "\nPanda warning: OpenCode failed while using Panda-managed XDG_DATA_HOME; "
-            "inspect the recorded opencode data dir and retry after clearing stale runtime state."
-        ).strip()
+        append_tool_warning(
+            result,
+            warning,
+            "OpenCode failed while using Panda-managed XDG_DATA_HOME; inspect the recorded "
+            "opencode data dir and retry after clearing stale runtime state.",
+        )
 
 
 def run_session_tools(
