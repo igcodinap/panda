@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.2.2 - 2026-05-30
+
 - Add `panda_export.v1.json` export contracts plus `--prepare-export-manifest` and `--export-manifest` validation for auditable summary versus full-context review.
 - Add a Claude Code auth diagnostic for sandboxed Panda subprocesses that cannot see the user's OAuth/keychain login state.
 - Document Panda's security model, context-export boundaries, local CLI auth boundaries, and artifact-handling expectations in `SECURITY.md`.
