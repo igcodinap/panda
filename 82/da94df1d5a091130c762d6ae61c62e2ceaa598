@@ -1,0 +1,24 @@
+site/src/styles/global.css
+  s_01cd10bc393510::t_50eb2db2b43434 539,544-545
+  s_01cd10bc393510::t_257ff9603dbd8e 523,529-530
+site/src/pages/index.astro
+  s_01cd10bc393510::t_a6e928f37b291e 227,252-259,263-266,268-270,273-274
+  s_01cd10bc393510::t_372fcd3ac4e2f7 239-242,246,261,271
+  s_01cd10bc393510::t_8e8ac8073291b5 272
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "82da94df1d5a091130c762d6ae61c62e2ceaa598",
+  "prompts": {},
+  "sessions": {
+    "s_01cd10bc393510": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e748a-8bd9-7aa0-84bb-6a5ad619fb86",
+        "model": "gpt-5.5"
+      },
+      "human_author": "igcodinap <igcodinap@users.noreply.github.com>"
+    }
+  }
+}
