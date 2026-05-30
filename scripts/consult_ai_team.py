@@ -1570,6 +1570,8 @@ def new_session_state(args: argparse.Namespace, workspace: Path, session_id: str
         "status": "created",
         "workspace": str(workspace),
         "tool": args.tool,
+        "tool_selector": args.tool,
+        "tool_selection_source": tool_selection_source(args),
         "mode": args.mode,
         "role": args.role,
         "approval_mode": args.approval_mode,
@@ -2097,6 +2099,14 @@ def requested_tools(tool: str, args: Optional[argparse.Namespace] = None) -> lis
     return [tool]
 
 
+def tool_selection_source(args: argparse.Namespace) -> str:
+    if getattr(args, "configured_agents", []):
+        return "agents"
+    if args.tool == "auto":
+        return "auto"
+    return "tool"
+
+
 def tool_selection_warnings(args: argparse.Namespace) -> list[dict]:
     if getattr(args, "configured_agents", []) or args.tool != "auto":
         return []
@@ -2455,6 +2465,8 @@ def run_one_shot(args: argparse.Namespace, prompt: str) -> int:
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "tool": args.tool,
+        "tool_selector": args.tool,
+        "tool_selection_source": tool_selection_source(args),
         "mode": args.mode,
         "execution": "parallel" if run_parallel else "sequential",
         "requested_execution": args.execution,
@@ -2935,6 +2947,8 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
             "runner_started_at": now_iso(),
             "workspace": str(workspace),
             "tool": args.tool,
+            "tool_selector": args.tool,
+            "tool_selection_source": tool_selection_source(args),
             "mode": args.mode,
             "role": args.role,
             "approval_mode": args.approval_mode,
@@ -3040,6 +3054,8 @@ def run_session(args: argparse.Namespace, user_prompt: str) -> int:
             "session_dir": str(session_path),
             "workspace": str(workspace),
             "tool": args.tool,
+            "tool_selector": args.tool,
+            "tool_selection_source": tool_selection_source(args),
             "run_cwd": str(run_cwd),
             "requested_tools": requested_tools(args.tool, args),
             "serialize_opencode": serialize_opencode,

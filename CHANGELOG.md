@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Clarify manifest tool selection metadata by adding `tool_selector` and `tool_selection_source` alongside the legacy `tool` field.
+
 ## v1.2.1 - 2026-05-30
 
 - Allow isolated Codex summary-only reviews to run by passing `--skip-git-repo-check` for advisory-mode Codex reviewer commands.

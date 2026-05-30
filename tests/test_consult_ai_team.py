@@ -1103,6 +1103,8 @@ class PreferenceTests(unittest.TestCase):
                 args = self.parse_with(["--session", "--prompt", "test"], {"PANDA_PREFERENCES_FILE": str(pref_path)})
             session = consult_ai_team.new_session_state(args, Path(tmpdir), "session-id")
 
+            self.assertEqual(session["tool_selector"], "opencode")
+            self.assertEqual(session["tool_selection_source"], "tool")
             self.assertEqual(session["requested_tools"], ["opencode"])
             self.assertEqual(session["preferences"]["applied_fields"], ["tool"])
 
@@ -1161,11 +1163,47 @@ class ManifestTests(unittest.TestCase):
 
             manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["tool"], "codex")
+            self.assertEqual(manifest["tool_selector"], "codex")
+            self.assertEqual(manifest["tool_selection_source"], "tool")
             self.assertEqual(manifest["privacy_mode"], "normal")
             self.assertEqual(manifest["requested_tools"], ["codex"])
             self.assertEqual(manifest["active_models"], {"codex": consult_ai_team.DEFAULT_CODEX_MODEL})
             self.assertEqual(manifest["applied_effort"]["codex"], consult_ai_team.DEFAULT_CODEX_EFFORT)
             self.assertEqual([tool["tool"] for tool in manifest["tools"]], ["codex"])
+
+    def test_agent_manifest_distinguishes_selector_from_launched_agents(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            args = self.parse_with([
+                "--agent",
+                "glm=opencode:opencode-go/glm-5.1",
+                "--dry-run",
+                "--output-dir",
+                tmpdir,
+                "--prompt",
+                "test",
+            ])
+            prompt = consult_ai_team.consultation_prompt(args.mode, args.role, args.approval_mode, "test")
+
+            with redirect_stdout(io.StringIO()):
+                consult_ai_team.run_one_shot(args, prompt)
+
+            manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["tool"], "codex")
+            self.assertEqual(manifest["tool_selector"], "codex")
+            self.assertEqual(manifest["tool_selection_source"], "agents")
+            self.assertEqual(manifest["requested_tools"], ["glm"])
+            self.assertEqual(
+                manifest["agents"],
+                [
+                    {
+                        "name": "glm",
+                        "backend": "opencode",
+                        "model": "opencode-go/glm-5.1",
+                    }
+                ],
+            )
+            self.assertEqual([tool["tool"] for tool in manifest["tools"]], ["glm"])
 
     def test_advisory_summary_manifest_uses_isolated_cwd(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1231,6 +1269,8 @@ class ManifestTests(unittest.TestCase):
 
             manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["schema_version"], consult_ai_team.SCHEMA_VERSION)
+            self.assertEqual(manifest["tool_selector"], "all")
+            self.assertEqual(manifest["tool_selection_source"], "tool")
             self.assertEqual(manifest["profile"], "deep")
             self.assertEqual(manifest["profile_source"], "role_default")
             self.assertEqual(manifest["cost_tier"], "high")
